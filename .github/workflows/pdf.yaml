@@ -95,7 +95,7 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/RawPedia/Public"
 
           echo "---- First generated HTML files ----"
-          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -80
+          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -80 || true
 
           echo "---- HTML count ----"
           HTML_COUNT="$(find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | wc -l | tr -d ' ')"
@@ -116,12 +116,12 @@ jobs:
               ! -path "*/index.jp/*" \
               ! -path "*/index.pt/*" \
               | sort \
-              | head -1
+              | head -1 || true
           )"
 
           echo "FIRST_ENGLISH_PAGE=$FIRST_ENGLISH_PAGE"
 
-            if [[ -n "$FIRST_ENGLISH_PAGE" ]]; then
+          if [[ -n "$FIRST_ENGLISH_PAGE" ]]; then
             wc -c "$FIRST_ENGLISH_PAGE"
 
             PLAIN_LEN="$(
@@ -133,7 +133,7 @@ jobs:
             echo "PLAIN_LEN=$PLAIN_LEN"
             echo "PLAIN_HEAD:"
             perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
-              | cut -c 1-500
+              | cut -c 1-500 || true
           fi
 
       - name: Prepare local paths expected by script
@@ -181,7 +181,7 @@ jobs:
           echo "RAWPEDIA_GIT_DIR=$RAWPEDIA_GIT_DIR"
 
           echo "---- HTML files passed to manual script ----"
-          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -80
+          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -80 || true
 
           chmod +x scripts/build-rawpedia-manual.zsh
 
