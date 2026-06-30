@@ -2987,8 +2987,13 @@ body {{
 }}
 
 .article {{
-  break-before: page;
+  break-before: auto;
+  margin-top: 2in;
   string-set: article attr(data-title);
+}}
+
+.article.first-article {{
+  margin-top: 0;
 }}
 
 .article h1.article-title {{
@@ -3389,6 +3394,7 @@ hr {{
 
     current_section = None
     part_num = 0
+    article_num = 0
 
     for info in infos:
         section = info["section"]
@@ -3416,8 +3422,11 @@ hr {{
 
         print(f"  ➜ [{section}] {info['title']}")
 
+        article_num += 1
+        article_class = "article first-article" if article_num == 1 else "article"
+
         out.write(f"""
-<section class="article" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
+<section class="{article_class}" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
 <div class="section-label">{html.escape(section)}</div>
 <h1 class="article-title" id="page-{html.escape(info["id"])}">{html.escape(info["title"])}</h1>
 <div class="article-body">
@@ -3473,6 +3482,25 @@ hr {{
 </body>
 </html>
 """)
+html_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+total_img_tags = len(re.findall(r"<img\b", html_text, flags=re.I))
+file_image_refs = len(re.findall(r'src=["\']file://', html_text, flags=re.I))
+missing_image_boxes = len(re.findall(r'class=["\']missing-image["\']', html_text, flags=re.I))
+
+print(f"✅ HTML image tags: {total_img_tags}")
+print(f"✅ HTML local file image refs: {file_image_refs}")
+print(f"✅ HTML missing-image placeholders: {missing_image_boxes}")
+
+if total_img_tags < 20:
+    print("❌ Suspiciously few image tags in generated HTML.")
+    print("❌ The PDF will be mostly text if this continues.")
+    sys.exit(1)
+
+if file_image_refs < 20:
+    print("❌ Suspiciously few local file:// image references in generated HTML.")
+    print("❌ Images are probably not being resolved from ~/RawPedia/Public.")
+    sys.exit(1)
 
 if missing_images:
     report = OUTPUT_HTML.parent / "missing-images.txt"
@@ -3528,6 +3556,11 @@ PY
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
 
+if [[ ! -s "$OUTPUT_HTML" ]]; then
+  echo "❌ HTML output was not created or is empty: $OUTPUT_HTML"
+  exit 1
+fi
+
 echo "📄 Rendering PDF..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
@@ -3537,12 +3570,39 @@ if ! command -v weasyprint >/dev/null 2>&1; then
   exit 1
 fi
 
+rm -f "$OUTPUT_PDF"
+
 weasyprint \
   --base-url "$SOURCE_DIR" \
   "$OUTPUT_HTML" \
   "$OUTPUT_PDF"
 
+if [[ ! -s "$OUTPUT_PDF" ]]; then
+  echo "❌ PDF was not created or is empty: $OUTPUT_PDF"
+  exit 1
+fi
+
+PDF_BYTES="$(stat -f%z "$OUTPUT_PDF" 2>/dev/null || stat -c%s "$OUTPUT_PDF")"
+PDF_MB="$(python3 - "$PDF_BYTES" <<'PY'
+import sys
+print(f"{int(sys.argv[1]) / 1024 / 1024:.2f}")
+PY
+)"
+
 echo "✅ DONE: $OUTPUT_PDF"
+echo "✅ PDF size: ${PDF_MB} MB"
+
+if python3 - "$PDF_BYTES" <<'PY'
+import sys
+sys.exit(0 if int(sys.argv[1]) < 10 * 1024 * 1024 else 1)
+PY
+then
+  echo "⚠️ PDF is under 10 MB."
+  echo "⚠️ That is suspicious for a RawPedia manual with embedded images."
+  echo "⚠️ Check:"
+  echo "   $WORK_DIR/missing-images.txt"
+  echo "   $OUTPUT_HTML"
+fi
 
 if [[ -f "$WORK_DIR/contributors.txt" ]]; then
   echo "✅ Contributors listed in:"
