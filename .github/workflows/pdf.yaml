@@ -132,7 +132,29 @@ jobs:
           find "$SOURCE_DIR" -type f -name "*.html" | sort | head -80
 
           chmod +x scripts/build-rawpedia-manual.zsh
-          ./scripts/build-rawpedia-manual.zsh
+
+          if ! ./scripts/build-rawpedia-manual.zsh; then
+            echo "❌ Manual build failed."
+            echo
+            echo "---- rawpedia_book directory ----"
+            ls -la rawpedia_book || true
+            echo
+            echo "---- pages-all.txt ----"
+            head -120 rawpedia_book/pages-all.txt 2>/dev/null || true
+            echo
+            echo "---- selected-pages.txt ----"
+            cat rawpedia_book/selected-pages.txt 2>/dev/null || true
+            echo
+            echo "---- skip-reasons.txt ----"
+            cat rawpedia_book/skip-reasons.txt 2>/dev/null || true
+            echo
+            echo "---- suppressed-redirect-pages.txt ----"
+            cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
+            echo
+            echo "---- suppressed-main-pages.txt ----"
+            cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Verify PDF content was generated
         run: |
