@@ -3830,7 +3830,7 @@ for url in sorted(set(re.findall(
 unresolved_attrs = []
 
 for m in re.finditer(
-    r'\b(src|href|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
+    r'\b(src|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
     s,
     flags=re.I | re.S,
 ):
@@ -3862,23 +3862,11 @@ if bad_file_urls or unresolved_attrs:
 print("✅ Local-only image cleanup complete")
 RAWPEDIA_LOCAL_IMAGE_CLEANUP
 
-
-
 if [[ ! -s "$OUTPUT_HTML" ]]; then
   echo "❌ HTML output was not created or is empty: $OUTPUT_HTML"
   exit 1
 fi
 
-echo "📄 Rendering PDF..."
-
-if ! command -v weasyprint >/dev/null 2>&1; then
-  echo "❌ weasyprint not found."
-  echo "Activate your venv first:"
-  echo "source myvenv/bin/activate"
-  exit 1
-fi
-
-rm -f "$OUTPUT_PDF"
 echo "🔎 Verifying every local file:// image exists before render..."
 
 python3 - "$OUTPUT_HTML" <<'VERIFY_LOCAL_IMAGES'
@@ -3931,26 +3919,16 @@ if file_refs < 20:
     sys.exit(1)
 VERIFY_LOCAL_IMAGES
 
-echo "✅ HTML book complete: $OUTPUT_HTML"
-
-# local-only cleanup block here
-
-if [[ ! -s "$OUTPUT_HTML" ]]; then
-  echo "❌ HTML output was not created or is empty: $OUTPUT_HTML"
-  exit 1
-fi
-
 echo "📄 Rendering PDF..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
   echo "❌ weasyprint not found."
+  echo "Activate your venv first:"
+  echo "source myvenv/bin/activate"
   exit 1
 fi
 
 rm -f "$OUTPUT_PDF"
-
-echo "🔎 Verifying every local file:// image exists before render..."
-# VERIFY_LOCAL_IMAGES block here
 
 weasyprint \
   --base-url "$SOURCE_DIR" \
@@ -3977,11 +3955,13 @@ import sys
 sys.exit(0 if int(sys.argv[1]) < 10 * 1024 * 1024 else 1)
 PY
 then
-  echo "⚠️ PDF is under 10 MB."
-  echo "⚠️ That is suspicious for a RawPedia manual with embedded images."
-  echo "⚠️ Check:"
+  echo "❌ PDF is under 10 MB."
+  echo "❌ That is suspicious for a RawPedia manual with embedded images."
+  echo "❌ Refusing CI success."
+  echo "❌ Check:"
   echo "   $WORK_DIR/missing-images.txt"
   echo "   $OUTPUT_HTML"
+  exit 1
 fi
 
 if [[ -f "$WORK_DIR/contributors.txt" ]]; then
