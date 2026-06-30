@@ -3894,10 +3894,70 @@ if ! command -v weasyprint >/dev/null 2>&1; then
   exit 1
 fi
 
-rm -f "$OUTPUT_PDF"
+echo "🔎 Image URL inventory before render..."
 
-echo "---- remaining bad image URL check ----"
-grep -Eo 'file:///([^"/][^"]*|images/[^"]*)\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)' "$OUTPUT_HTML" | sort -u | head -40 || true
+python3 - "$OUTPUT_HTML" <<'IMAGE_URL_INVENTORY'
+import re
+import sys
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+patterns = {
+    "img tags": r"<img\b",
+    "src file URLs": r'src=["\']file://',
+    "src http URLs": r'src=["\']https?://',
+    "bad root file URLs": r'file:///(?!Users/|private/|Volumes/|opt/|var/|tmp/)[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    "missing-image boxes": r'class=["\']missing-image["\']',
+}
+
+for label, pattern in patterns.items():
+    print(f"{label}: {len(re.findall(pattern, s, flags=re.I))}")
+
+bad = re.findall(
+    r'file:///(?!Users/|private/|Volumes/|opt/|var/|tmp/)[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+)
+
+if bad:
+    print("")
+    print("Sample bad root file URLs:")
+    for item in sorted(set(bad))[:30]:
+        print(f"  {item}")
+IMAGE_URL_INVENTORY
+
+echo "🔎 Refusing to render if bad root file:/// image URLs remain..."
+
+python3 - "$OUTPUT_HTML" <<'BAD_FILE_URL_CHECK'
+import re
+import sys
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+bad = re.findall(
+    r'file:///(?!Users/|private/|Volumes/|opt/|var/|tmp/)[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+)
+
+if bad:
+    print("❌ Bad root file:/// image URLs remain in book.html.")
+    print("❌ These make WeasyPrint create a tiny image-less PDF.")
+    print("")
+    for item in sorted(set(bad))[:100]:
+        print(f"   {item}")
+    print("")
+    print("Fix the image cleanup before rendering.")
+    sys.exit(1)
+
+print("✅ No bad root file:/// image URLs found.")
+BAD_FILE_URL_CHECK
+
+rm -f "$OUTPUT_PDF"
 
 weasyprint \
   --base-url "$SOURCE_DIR" \
