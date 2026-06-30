@@ -237,7 +237,7 @@ jobs:
           cat rawpedia_book/missing-images.txt 2>/dev/null || true
         
           exit 1
-        fi
+          fi
 
       - name: Verify PDF content was generated
         run: |
