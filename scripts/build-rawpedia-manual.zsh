@@ -2848,12 +2848,12 @@ body {{
 }}
 
 .license-text {{
-  column-count: 3;
-  column-gap: 0.138in;
+  column-count: 4;
+  column-gap: 0.1in;
   column-rule: 0.25pt solid #ddd;
   white-space: pre-wrap;
   font-family: Menlo, Consolas, monospace;
-  font-size: 4pt;
+  font-size: 3pt;
   line-height: 1.075;
   overflow-wrap: normal;
   word-break: normal;
