@@ -1576,33 +1576,69 @@ def page_sort_key(info):
     return (order, priority, title, info["rel"].lower())
 
 def resolve_local_asset(src: str, page_path: Path) -> Path | None:
-    raw = html.unescape(src).strip()
+    raw = html.unescape(src or "").strip()
 
-    if not raw or raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
+    if not raw:
         return None
 
+    if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
+        return None
+
+    # Ignore srcset descriptors if one sneaks through.
+    raw = raw.split()[0].strip()
+
     parsed = urllib.parse.urlsplit(raw)
-    path_part = urllib.parse.unquote(parsed.path)
+    path_part = urllib.parse.unquote(parsed.path).strip()
+
+    if not path_part:
+        return None
+
+    path_part = path_part.replace("\\", "/")
+    path_no_leading = path_part.lstrip("/")
+    path_lower = path_no_leading.lower()
 
     candidates = []
 
     if path_part.startswith("/"):
-        candidates.append(SOURCE_DIR / path_part.lstrip("/"))
+        candidates.append(SOURCE_DIR / path_no_leading)
+        candidates.append(RAWPEDIA_ROOT / "static" / path_no_leading)
+        candidates.append(RAWPEDIA_ROOT / "assets" / path_no_leading)
+        candidates.append(RAWPEDIA_ROOT / "resources" / path_no_leading)
+        candidates.append(RAWPEDIA_ROOT / path_no_leading)
     else:
         candidates.append(page_path.parent / path_part)
         candidates.append(SOURCE_DIR / path_part)
+        candidates.append(RAWPEDIA_ROOT / "static" / path_part)
+        candidates.append(RAWPEDIA_ROOT / "assets" / path_part)
+        candidates.append(RAWPEDIA_ROOT / "resources" / path_part)
+        candidates.append(RAWPEDIA_ROOT / path_part)
 
     for c in candidates:
         try:
             c = c.resolve()
-        except FileNotFoundError:
+        except Exception:
             pass
 
         if c.exists() and c.suffix.lower() in asset_exts:
             return c
 
+    # Relative-path index fallback.
+    found = asset_by_rel.get(path_lower)
+    if found and found.exists():
+        return found
+
+    # Common Hugo/static path fallback.
+    for prefix in ("images/", "img/", "media/", "uploads/", "files/"):
+        if prefix in path_lower:
+            tail = path_lower[path_lower.index(prefix):]
+            found = asset_by_rel.get(tail)
+            if found and found.exists():
+                return found
+
+    # Filename fallback.
     base = Path(path_part).name.lower()
     found = asset_by_name.get(base)
+
     if found and found.exists():
         return found
 
