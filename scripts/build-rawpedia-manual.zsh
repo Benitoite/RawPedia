@@ -3554,67 +3554,90 @@ PY
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
 echo
-echo "---- REAL img tag diagnostic ----"
+echo
+echo "---- image refs in generated book.html ----"
 
-python3 - "$OUTPUT_HTML" <<'REAL_IMG_DIAGNOSTIC'
+python3 - "$OUTPUT_HTML" "$WORK_DIR/missing-images.txt" <<'IMAGE_REF_REPORT'
 import re
 import sys
 import html
 from pathlib import Path
 
-s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+OUTPUT_HTML = Path(sys.argv[1])
+MISSING_IMAGES = Path(sys.argv[2])
 
-imgs = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
-print(f"img tags total: {len(imgs)}")
+img_tags = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
 
-has_src = 0
-has_srcset = 0
-has_data = 0
-no_src = 0
+src_values = []
+srcset_values = []
+data_values = []
+no_src_tags = []
 
-src_samples = []
-tag_samples = []
-
-for tag in imgs:
-    tag_one = re.sub(r"\s+", " ", tag).strip()
-
+for tag in img_tags:
     src = re.search(r'\bsrc\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
     src_unquoted = re.search(r'\bsrc\s*=\s*([^"\'\s>]+)', tag, flags=re.I | re.S)
     srcset = re.search(r'\bsrcset\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
     data = re.search(r'\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
 
-    if src or src_unquoted:
-        has_src += 1
-        value = src.group(2) if src else src_unquoted.group(1)
-        if len(src_samples) < 80:
-            src_samples.append(html.unescape(value).strip())
+    if src:
+        src_values.append(html.unescape(src.group(2)).strip())
+    elif src_unquoted:
+        src_values.append(html.unescape(src_unquoted.group(1)).strip())
     else:
-        no_src += 1
-        if len(tag_samples) < 40:
-            tag_samples.append(tag_one)
+        no_src_tags.append(re.sub(r"\s+", " ", tag).strip())
 
     if srcset:
-        has_srcset += 1
+        srcset_values.append(html.unescape(srcset.group(2)).strip())
 
     if data:
-        has_data += 1
+        data_values.append(html.unescape(data.group(2)).strip())
 
-print(f"img with src: {has_src}")
-print(f"img with srcset: {has_srcset}")
-print(f"img with data/lazy src: {has_data}")
-print(f"img with NO src: {no_src}")
+src_file_refs = [v for v in src_values if v.startswith("file://")]
+src_http_refs = [v for v in src_values if v.startswith(("http://", "https://"))]
+src_data_refs = [v for v in src_values if v.startswith("data:")]
+src_relative_refs = [
+    v for v in src_values
+    if v and not v.startswith(("file://", "http://", "https://", "data:"))
+]
+
+missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
+
+print(f"img tags: {len(img_tags)}")
+print(f"img src attrs: {len(src_values)}")
+print(f"src file refs: {len(src_file_refs)}")
+print(f"src http refs: {len(src_http_refs)}")
+print(f"src data refs: {len(src_data_refs)}")
+print(f"src relative/unresolved refs: {len(src_relative_refs)}")
+print(f"srcset attrs: {len(srcset_values)}")
+print(f"data/lazy attrs: {len(data_values)}")
+print(f"img tags with no src: {len(no_src_tags)}")
+print(f"missing-image boxes: {missing_boxes}")
 
 print()
-print("sample src values:")
-for item in src_samples[:80]:
+print("sample unresolved src values:")
+for item in src_relative_refs[:60]:
     print(f"  {item}")
 
 print()
-print("sample img tags with NO src:")
-for item in tag_samples[:40]:
+print("sample img tags with no src:")
+for item in no_src_tags[:25]:
     print(f"  {item}")
-REAL_IMG_DIAGNOSTIC
+
+print()
+print("---- missing-images.txt ----")
+if MISSING_IMAGES.exists():
+    txt = MISSING_IMAGES.read_text(encoding="utf-8", errors="replace").strip()
+    if txt:
+        print(txt[:8000])
+    else:
+        print("(empty)")
+else:
+    print("(not present)")
+
+sys.exit(0)
+IMAGE_REF_REPORT
 
 echo "🖼 Local-only image URL cleanup before PDF render..."
 
