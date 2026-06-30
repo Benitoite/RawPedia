@@ -1644,47 +1644,168 @@ def resolve_local_asset(src: str, page_path: Path) -> Path | None:
 
     return None
 
-def rewrite_images(s: str, page_path: Path, page_title: str, page_rel: str) -> str:
-    def repl(m):
-        tag = m.group(0)
-        src = m.group(3)
-        found = resolve_local_asset(src, page_path)
+def rewrite_srcset_value(value: str, page_path: Path) -> str:
+    """
+    Rewrite srcset candidates to local file:// URIs.
+
+    Keeps width/density descriptors, e.g.
+        image.jpg 800w
+        image@2x.jpg 2x
+    """
+    parts = []
+
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+
+        if not candidate:
+            continue
+
+        bits = candidate.split()
+        url = bits[0]
+        descriptor = " ".join(bits[1:])
+
+        found = resolve_local_asset(url, page_path)
 
         if found:
-            safe_uri = html.escape(found.resolve().as_uri(), quote=True)
-            tag = re.sub(
-                r'\bsrc=(["\']).*?\1',
-                f'src="{safe_uri}"',
+            new_url = found.resolve().as_uri()
+        else:
+            new_url = url
+
+        if descriptor:
+            parts.append(f"{new_url} {descriptor}")
+        else:
+            parts.append(new_url)
+
+    return ", ".join(parts)
+
+def rewrite_url_attr(tag: str, attr_name: str, page_path: Path) -> tuple[str, bool]:
+    """
+    Rewrite a single URL attribute in an HTML tag.
+    Returns updated tag and whether a local asset was found.
+    """
+    pattern = rf'\b{re.escape(attr_name)}=(["\'])(.*?)\1'
+    m = re.search(pattern, tag, flags=re.I | re.S)
+
+    if not m:
+        return tag, False
+
+    value = m.group(2)
+
+    if attr_name.lower() == "srcset":
+        rewritten = rewrite_srcset_value(value, page_path)
+        tag = re.sub(
+            pattern,
+            f'{attr_name}="{html.escape(rewritten, quote=True)}"',
+            tag,
+            count=1,
+            flags=re.I | re.S,
+        )
+        return tag, rewritten != value
+
+    found = resolve_local_asset(value, page_path)
+
+    if not found:
+        return tag, False
+
+    safe_uri = html.escape(found.resolve().as_uri(), quote=True)
+
+    tag = re.sub(
+        pattern,
+        f'{attr_name}="{safe_uri}"',
+        tag,
+        count=1,
+        flags=re.I | re.S,
+    )
+
+    return tag, True
+
+def rewrite_images(s: str, page_path: Path, page_title: str, page_rel: str) -> str:
+    """
+    Rewrite image references to file:// URIs for WeasyPrint.
+
+    Handles:
+      <img src="">
+      <img srcset="">
+      <img data-src="">
+      <img data-original="">
+      <source srcset="">
+      <source src="">
+    """
+    def repl(m):
+        tag = m.group(0)
+        original_tag = tag
+        tag_name = m.group(1).lower()
+
+        found_any = False
+
+        # Normal image/source URLs.
+        for attr in ("src", "srcset"):
+            tag, found = rewrite_url_attr(tag, attr, page_path)
+            found_any = found_any or found
+
+        # Lazy-loading attributes. If src is absent or empty, promote data-src.
+        for lazy_attr in ("data-src", "data-original", "data-lazy-src"):
+            lazy_match = re.search(
+                rf'\b{re.escape(lazy_attr)}=(["\'])(.*?)\1',
                 tag,
-                count=1,
                 flags=re.I | re.S,
             )
-            return tag
 
-        raw = html.unescape(src.strip())
-        filename = Path(urllib.parse.urlsplit(raw).path).name or raw or "unknown image"
+            if not lazy_match:
+                continue
 
-        missing_images.append({
-            "image": raw,
-            "filename": filename,
-            "page_title": page_title,
-            "page_rel": page_rel,
-        })
+            lazy_value = lazy_match.group(2)
+            found = resolve_local_asset(lazy_value, page_path)
 
-        return (
-            '<div class="missing-image">'
-            '<strong>Missing image</strong>'
-            f'<div class="missing-file">{html.escape(filename)}</div>'
-            f'<div class="missing-path">{html.escape(raw)}</div>'
-            '</div>'
-        )
+            if not found:
+                continue
 
-    return re.sub(
-        r'(<img\b[^>]*?\bsrc=)(["\'])(.*?)(\2[^>]*>)',
+            safe_uri = html.escape(found.resolve().as_uri(), quote=True)
+
+            src_match = re.search(r'\bsrc=(["\'])(.*?)\1', tag, flags=re.I | re.S)
+
+            if src_match:
+                if not src_match.group(2).strip():
+                    tag = re.sub(
+                        r'\bsrc=(["\']).*?\1',
+                        f'src="{safe_uri}"',
+                        tag,
+                        count=1,
+                        flags=re.I | re.S,
+                    )
+            else:
+                tag = tag[:-1] + f' src="{safe_uri}">'
+
+            found_any = True
+
+        # If this is an img with an unresolved local src, report it.
+        if tag_name == "img":
+            src_match = re.search(r'\bsrc=(["\'])(.*?)\1', original_tag, flags=re.I | re.S)
+
+            if src_match:
+                original_src = html.unescape(src_match.group(2).strip())
+
+                if original_src and not original_src.startswith(("http://", "https://", "data:", "mailto:", "#")):
+                    if not resolve_local_asset(original_src, page_path):
+                        filename = Path(urllib.parse.urlsplit(original_src).path).name or original_src or "unknown image"
+
+                        missing_images.append({
+                            "image": original_src,
+                            "filename": filename,
+                            "page_title": page_title,
+                            "page_rel": page_rel,
+                        })
+
+        return tag
+
+    s = re.sub(
+        r'<(img|source)\b[^>]*>',
         repl,
         s,
         flags=re.I | re.S,
     )
+
+    return s
 
 def prefix_ids_and_anchors(s: str, prefix: str) -> str:
     def id_repl(m):
