@@ -1983,8 +1983,9 @@ def build_technical_index(infos):
         }
 
     return result
-
 infos = []
+skip_reasons = defaultdict(list)
+selected_pages = []
 
 for page in all_pages_raw:
     text = read_text(page)
@@ -1998,19 +1999,23 @@ for page in all_pages_raw:
             suppressed_redirects.append(rel)
         elif reason == "main-page-variant":
             suppressed_main_pages.append(rel)
+
+        skip_reasons[f"suppressed-{reason}"].append(rel)
         continue
 
     if not is_probably_english_page(page, title, text):
+        skip_reasons["not-probably-english"].append(rel)
         continue
 
     page_id = make_id(rel)
 
-    content = extract_main_or_body(text)
-    content = strip_bad_parts(content)
+    raw_content = extract_main_or_body(text)
+    content = strip_bad_parts(raw_content)
     content = clean_links(content)
 
     if is_redirect_page_text(content, title):
         suppressed_redirects.append(rel)
+        skip_reasons["redirect-after-clean"].append(rel)
         continue
 
     content = rewrite_images(content, page, title, rel)
@@ -2025,7 +2030,44 @@ for page in all_pages_raw:
     content = strip_empty_leading_blocks(content)
 
     if not has_meaningful_content(content, title):
-        continue
+        # GitHub/Hugo theme fallback:
+        # If the normal main/article extraction or cleanup stripped too much,
+        # try a less destructive body fallback before throwing the page away.
+        fallback = text
+
+        body_match = re.search(r"<body\b[^>]*>(.*?)</body>", text, flags=re.I | re.S)
+        if body_match:
+            fallback = body_match.group(1)
+
+        fallback = re.sub(r"<script\b.*?</script>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<noscript\b.*?</noscript>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<style\b.*?</style>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<header\b.*?</header>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<footer\b.*?</footer>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<nav\b.*?</nav>", "", fallback, flags=re.I | re.S)
+
+        fallback = clean_links(fallback)
+        fallback = rewrite_images(fallback, page, title, rel)
+        fallback = prefix_ids_and_anchors(fallback, page_id)
+        fallback = strip_empty_leading_blocks(fallback)
+
+        if is_redirect_page_text(fallback, title):
+            suppressed_redirects.append(rel)
+            skip_reasons["redirect-after-fallback"].append(rel)
+            continue
+
+        if has_meaningful_content(fallback, title):
+            fallback_toc = build_article_toc(fallback, page_id)
+
+            if fallback_toc:
+                fallback = fallback_toc + "\n" + fallback
+
+            content = strip_empty_leading_blocks(fallback)
+        else:
+            plain_len = len(html_to_plain_text(content))
+            fallback_plain_len = len(html_to_plain_text(fallback))
+            skip_reasons[f"not-meaningful-content normal={plain_len} fallback={fallback_plain_len}"].append(rel)
+            continue
 
     order, section = page_kind(title, rel)
 
@@ -2040,7 +2082,39 @@ for page in all_pages_raw:
         "content": content,
     })
 
+    selected_pages.append(f"{title} [{rel}]")
+
 infos.sort(key=page_sort_key)
+
+selected_report = OUTPUT_HTML.parent / "selected-pages.txt"
+selected_report.write_text("\n".join(selected_pages) + "\n", encoding="utf-8")
+print(f"✅ Selected page report: {selected_report}")
+
+skip_report = OUTPUT_HTML.parent / "skip-reasons.txt"
+skip_lines = []
+
+for reason, rels in sorted(skip_reasons.items()):
+    skip_lines.append("------------------------------------------------------------")
+    skip_lines.append(reason)
+    skip_lines.append(f"count: {len(rels)}")
+    skip_lines.append("")
+
+    for rel in sorted(set(rels))[:300]:
+        skip_lines.append(rel)
+
+    if len(set(rels)) > 300:
+        skip_lines.append(f"... {len(set(rels)) - 300} more")
+
+    skip_lines.append("")
+
+skip_report.write_text("\n".join(skip_lines), encoding="utf-8")
+print(f"✅ Skip reason report: {skip_report}")
+
+if not infos:
+    print("❌ No article pages were selected.")
+    print(f"❌ See: {skip_report}")
+    print(f"❌ See: {OUTPUT_HTML.parent / 'pages-all.txt'}")
+    raise SystemExit(1)
 
 for contributor in harvest_contributors_from_contents():
     all_contributors.add(contributor)
