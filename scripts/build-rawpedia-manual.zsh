@@ -20,7 +20,9 @@ RT_AUTHORS_TXT="$HOME/repo-rt/AUTHORS.txt"
 
 RT_GIT_DIR="$HOME/repo-rt"
 
-if [[ -d "$HOME/rawpedia/.git" ]]; then
+if [[ -d "$HOME/RawPedia/.git" ]]; then
+  RAWPEDIA_GIT_DIR="$HOME/RawPedia"
+elif [[ -d "$HOME/rawpedia/.git" ]]; then
   RAWPEDIA_GIT_DIR="$HOME/rawpedia"
 else
   RAWPEDIA_GIT_DIR="$HOME/RawPedia"
