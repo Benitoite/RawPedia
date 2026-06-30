@@ -188,8 +188,9 @@ jobs:
           name: rawtherapee-manual-pdf
           path: rawtherapee_manual.pdf
           if-no-files-found: error
-
+          
       - name: Upload build reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rawpedia-book-reports
