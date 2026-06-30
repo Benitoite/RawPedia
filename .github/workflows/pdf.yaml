@@ -63,16 +63,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          rm -rf "$HOME/repo-rt" "$HOME/RawPedia" "$HOME/rawpedia"
+          echo "HOME=$HOME"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+
+          rm -rf "$HOME/repo-rt"
+          rm -rf "$HOME/RawPedia"
 
           ln -s "$GITHUB_WORKSPACE/repo-rt" "$HOME/repo-rt"
           ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/RawPedia"
-          ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/rawpedia"
 
           test -d "$HOME/repo-rt"
           test -d "$HOME/RawPedia"
           test -d "$HOME/RawPedia/Public"
           test -d "$HOME/RawPedia/content"
+
+          ls -la "$HOME"
 
       - name: Build PDF manual
         run: |
