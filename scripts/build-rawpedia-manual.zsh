@@ -3556,6 +3556,7 @@ echo "✅ HTML book complete: $OUTPUT_HTML"
 echo "🖼 Final image URL cleanup before PDF render..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'RAWPEDIA_IMAGE_URL_CLEANUP'
+import os
 import re
 import sys
 import html
@@ -3572,118 +3573,133 @@ asset_exts = {
 }
 
 asset_by_name = {}
+asset_by_rel = {}
 
-for p in SOURCE_DIR.rglob("*"):
-    if p.is_file() and p.suffix.lower() in asset_exts:
-        asset_by_name.setdefault(p.name.lower(), p.resolve())
+for root, dirs, files in os.walk(SOURCE_DIR):
+    for name in files:
+        p = (Path(root) / name).resolve()
+
+        if p.suffix.lower() not in asset_exts:
+            continue
+
+        rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
+        asset_by_rel.setdefault(rel, p)
+        asset_by_name.setdefault(name.lower(), p)
+
+print(f"✅ Cleanup asset index by filename: {len(asset_by_name)}")
+print(f"✅ Cleanup asset index by relative path: {len(asset_by_rel)}")
 
 def is_asset_url(value: str) -> bool:
     raw = html.unescape(value or "").strip()
     path = urllib.parse.urlsplit(raw).path
     return Path(path).suffix.lower() in asset_exts
 
+def online_image_url_for_filename(filename: str) -> str:
+    filename = urllib.parse.quote(filename)
+    return f"{RAWPEDIA_ONLINE_URL}/images/{filename}"
+
 def online_url_for_path(path: str) -> str:
-    path = urllib.parse.unquote(path or "").replace("\\", "/")
+    path = urllib.parse.unquote(path or "").replace("\\", "/").strip()
 
     if not path:
         return path
+
+    filename = Path(path).name
+
+    if filename:
+        return online_image_url_for_filename(filename)
 
     if not path.startswith("/"):
         path = "/" + path
 
     return RAWPEDIA_ONLINE_URL + path
 
-def local_asset_for_path(path: str):
-    path = urllib.parse.unquote(path or "").replace("\\", "/")
+def find_local_asset_from_path(path: str) -> Path | None:
+    path = urllib.parse.unquote(path or "").replace("\\", "/").strip()
 
     if not path:
         return None
 
-    path_no_leading = path.lstrip("/")
+    candidates = []
 
-    candidates = [
-        SOURCE_DIR / path_no_leading,
-        SOURCE_DIR / "images" / Path(path).name,
-        SOURCE_DIR / Path(path).name,
-    ]
+    p = Path(path)
+
+    # Existing absolute file path.
+    if p.is_absolute() and p.exists():
+        candidates.append(p)
+
+    # Root-relative path from Public.
+    if path.startswith("/"):
+        candidates.append(SOURCE_DIR / path.lstrip("/"))
+    else:
+        candidates.append(SOURCE_DIR / path)
+
+    rel_key = path.lstrip("/").lower()
+
+    if rel_key in asset_by_rel:
+        candidates.append(asset_by_rel[rel_key])
+
+    # RawPedia/Hugo image path variants.
+    if rel_key.startswith("images/"):
+        short_key = rel_key.removeprefix("images/")
+        if short_key in asset_by_rel:
+            candidates.append(asset_by_rel[short_key])
+    else:
+        images_key = f"images/{rel_key}"
+        if images_key in asset_by_rel:
+            candidates.append(asset_by_rel[images_key])
+
+    # Basename fallback.
+    base = Path(path).name.lower()
+    if base in asset_by_name:
+        candidates.append(asset_by_name[base])
 
     for c in candidates:
         try:
-            c = c.resolve()
+            c = Path(c).resolve()
         except Exception:
-            pass
+            continue
 
         if c.exists() and c.suffix.lower() in asset_exts:
             return c
 
-    found = asset_by_name.get(Path(path).name.lower())
-
-    if found and found.exists():
-        return found
-
     return None
 
-def fixed_asset_url(value: str) -> str:
+def local_or_online(value: str) -> str:
     raw = html.unescape(value or "").strip()
 
     if not raw:
         return value
 
-    if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
+    if raw.startswith(("data:", "mailto:", "#")):
         return value
 
     parsed = urllib.parse.urlsplit(raw)
-    path = urllib.parse.unquote(parsed.path).replace("\\", "/")
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/").strip()
 
     if not path:
         return value
 
-    # Valid local file:// URL. Keep it.
+    # Keep working remote URLs.
+    if raw.startswith(("http://", "https://")):
+        return value
+
+    # Fix all file:// URLs. Do not trust syntactically absolute paths.
     if raw.startswith("file://"):
-        local_path = Path(path)
-
-        if local_path.exists():
-            return raw
-
-        # Broken root file URL, such as file:///foo.png or file:///images/foo.png.
-        found = local_asset_for_path(path)
+        found = find_local_asset_from_path(path)
 
         if found:
             return found.resolve().as_uri()
 
-        fixed = online_url_for_path(path)
+        return online_url_for_path(path)
 
-        if parsed.query:
-            fixed += "?" + parsed.query
-
-        return fixed
-
-    # Root-relative URL, such as /foo.png or /images/foo.png.
-    if path.startswith("/"):
-        found = local_asset_for_path(path)
-
-        if found:
-            return found.resolve().as_uri()
-
-        fixed = online_url_for_path(path)
-
-        if parsed.query:
-            fixed += "?" + parsed.query
-
-        return fixed
-
-    # Plain relative URL, such as foo.png.
-    found = local_asset_for_path(path)
+    # Root-relative or plain relative asset URL.
+    found = find_local_asset_from_path(path)
 
     if found:
         return found.resolve().as_uri()
 
-    fixed = online_url_for_path(path)
-
-    if parsed.query:
-        fixed += "?" + parsed.query
-
-    return fixed
+    return online_url_for_path(path)
 
 def rewrite_attr(m):
     attr = m.group(1)
@@ -3693,8 +3709,7 @@ def rewrite_attr(m):
     if not is_asset_url(value):
         return m.group(0)
 
-    new_value = fixed_asset_url(value)
-
+    new_value = local_or_online(value)
     return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
 
 def rewrite_srcset(m):
@@ -3715,7 +3730,7 @@ def rewrite_srcset(m):
         descriptor = " ".join(bits[1:])
 
         if is_asset_url(url):
-            url = fixed_asset_url(url)
+            url = local_or_online(url)
 
         if descriptor:
             out.append(f"{url} {descriptor}")
@@ -3731,90 +3746,24 @@ def rewrite_css_url(m):
     if not is_asset_url(value):
         return m.group(0)
 
-    new_value = fixed_asset_url(value)
+    new_value = local_or_online(value)
 
     if quote:
         return f"url({quote}{new_value}{quote})"
 
     return f"url({new_value})"
 
-def count_broken_root_file_urls(s: str) -> int:
-    """
-    Count only impossible root file URLs like:
-      file:///foo.png
-      file:///images/foo.png
-
-    Do not count real local paths:
-      file:///Users/...
-      file:///home/...
-      file:///private/...
-      file:///var/...
-      file:///tmp/...
-    """
-    hits = re.findall(
-        r'file:///[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
-        s,
-        flags=re.I,
-    )
-
-    bad = []
-
-    for h in hits:
-        path = urllib.parse.urlsplit(h).path
-
-        if path.startswith((
-            "/Users/",
-            "/home/",
-            "/private/",
-            "/var/",
-            "/tmp/",
-            "/opt/",
-            "/Volumes/",
-        )):
-            continue
-
-        if Path(path).exists():
-            continue
-
-        bad.append(h)
-
-    return len(bad)
-
-def list_broken_root_file_urls(s: str):
-    hits = re.findall(
-        r'file:///[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
-        s,
-        flags=re.I,
-    )
-
-    out = []
-
-    for h in sorted(set(hits)):
-        path = urllib.parse.urlsplit(h).path
-
-        if path.startswith((
-            "/Users/",
-            "/home/",
-            "/private/",
-            "/var/",
-            "/tmp/",
-            "/opt/",
-            "/Volumes/",
-        )):
-            continue
-
-        if Path(path).exists():
-            continue
-
-        out.append(h)
-
-    return out
-
 s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
-before_bad = count_broken_root_file_urls(s)
+before_file_assets = len(
+    re.findall(
+        r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+        s,
+        flags=re.I,
+    )
+)
 
-# Rewrite src/href/data-src/etc asset attributes.
+# src=, href=, data-src=, etc.
 s = re.sub(
     r'\b(src|href|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
     rewrite_attr,
@@ -3822,7 +3771,7 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
-# Rewrite srcset candidates.
+# srcset
 s = re.sub(
     r'\b(srcset)=(["\'])(.*?)\2',
     rewrite_srcset,
@@ -3830,7 +3779,7 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
-# Rewrite CSS url(...).
+# CSS url(...)
 s = re.sub(
     r'url\(\s*([\'"]?)([^\'")]+?\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^\'")]*)?)\1\s*\)',
     rewrite_css_url,
@@ -3838,19 +3787,18 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
-after_bad = count_broken_root_file_urls(s)
+after_file_assets = len(
+    re.findall(
+        r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+        s,
+        flags=re.I,
+    )
+)
 
 OUTPUT_HTML.write_text(s, encoding="utf-8")
 
-print(f"Before cleanup: broken root file URLs={before_bad}")
-print(f"After cleanup:  broken root file URLs={after_bad}")
-
-if after_bad:
-    print("❌ Remaining broken root file URLs:")
-    for item in list_broken_root_file_urls(s)[:40]:
-        print(f"  - {item}")
-    raise SystemExit(1)
-
+print(f"Before cleanup: file asset URLs={before_file_assets}")
+print(f"After cleanup:  file asset URLs={after_file_assets}")
 print("✅ Final image URL cleanup complete")
 RAWPEDIA_IMAGE_URL_CLEANUP
 
@@ -3958,7 +3906,51 @@ print("✅ No bad root file:/// image URLs found.")
 BAD_FILE_URL_CHECK
 
 rm -f "$OUTPUT_PDF"
+echo "🔎 Verifying every local file:// image exists before render..."
 
+python3 - "$OUTPUT_HTML" <<'VERIFY_LOCAL_IMAGES'
+import re
+import sys
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+urls = re.findall(
+    r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+)
+
+missing = []
+
+for url in urls:
+    path = urllib.parse.urlsplit(url).path
+    path = urllib.parse.unquote(path)
+
+    if not Path(path).exists():
+        missing.append(url)
+
+print(f"✅ Local file:// image URLs found: {len(urls)}")
+print(f"✅ Broken local file:// image URLs found: {len(missing)}")
+
+if missing:
+    print("❌ Broken local file:// image URLs remain. Refusing to render.")
+    for item in sorted(set(missing))[:100]:
+        print(f"   {item}")
+    sys.exit(1)
+
+img_tags = len(re.findall(r"<img\b", s, flags=re.I))
+file_refs = len(re.findall(r'src=["\']file://', s, flags=re.I))
+http_refs = len(re.findall(r'src=["\']https?://', s, flags=re.I))
+missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
+
+print(f"✅ HTML image tags before render: {img_tags}")
+print(f"✅ HTML local image refs before render: {file_refs}")
+print(f"✅ HTML online image refs before render: {http_refs}")
+print(f"✅ HTML missing-image placeholders before render: {missing_boxes}")
+VERIFY_LOCAL_IMAGES
 weasyprint \
   --base-url "$SOURCE_DIR" \
   "$OUTPUT_HTML" \
