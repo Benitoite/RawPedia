@@ -186,30 +186,58 @@ jobs:
           chmod +x scripts/build-rawpedia-manual.zsh
 
           if ! ./scripts/build-rawpedia-manual.zsh; then
-            echo "❌ Manual build failed."
+          echo "❌ Manual build failed."
+          echo
+          echo "---- rawpedia_book directory ----"
+          ls -la rawpedia_book || true
+          echo
+          echo "---- pages-all.txt ----"
+          head -120 rawpedia_book/pages-all.txt 2>/dev/null || true
+          echo
+          echo "---- selected-pages.txt ----"
+          cat rawpedia_book/selected-pages.txt 2>/dev/null || true
+          echo
+          echo "---- skip-reasons first 220 lines ----"
+          head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
+          echo
+          echo "---- skip-reasons category summary ----"
+          grep -n "^count:\|^not-\|^suppressed-\|^redirect" rawpedia_book/skip-reasons.txt 2>/dev/null || true
+          echo
+          echo "---- suppressed-redirect-pages.txt ----"
+          cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
+          echo
+          echo "---- suppressed-main-pages.txt ----"
+          cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
+        
+          echo
+          echo "---- image refs in generated book.html ----"
+          if [[ -f rawpedia_book/book.html ]]; then
+            echo "img tags:"
+            grep -c '<img\b' rawpedia_book/book.html || true
+        
+            echo "src file refs:"
+            grep -Eo 'src=["'\'']file://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
             echo
-            echo "---- rawpedia_book directory ----"
-            ls -la rawpedia_book || true
+        
+            echo "src http refs:"
+            grep -Eo 'src=["'\'']https?://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
             echo
-            echo "---- pages-all.txt ----"
-            head -120 rawpedia_book/pages-all.txt 2>/dev/null || true
-            echo
-            echo "---- selected-pages.txt ----"
-            cat rawpedia_book/selected-pages.txt 2>/dev/null || true
-            echo
-            echo "---- skip-reasons first 220 lines ----"
-            head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
-            echo
-            echo "---- skip-reasons category summary ----"
-            grep -n "^count:\|^not-\|^suppressed-\|^redirect" rawpedia_book/skip-reasons.txt 2>/dev/null || true
-            echo
-            echo "---- suppressed-redirect-pages.txt ----"
-            cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
-            echo
-            echo "---- suppressed-main-pages.txt ----"
-            cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
-            exit 1
+        
+            echo "missing-image boxes:"
+            grep -c 'class=["'\'']missing-image["'\'']' rawpedia_book/book.html || true
+        
+            echo "sample unresolved image attrs:"
+            grep -Eo '(src|data-src|data-original|data-lazy-src)=["'\''][^"'\'']+\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?[^"'\'']*)?["'\'']' rawpedia_book/book.html \
+              | grep -v 'file://' \
+              | head -80 || true
           fi
+        
+          echo
+          echo "---- missing-images.txt ----"
+          cat rawpedia_book/missing-images.txt 2>/dev/null || true
+        
+          exit 1
+        fi
 
       - name: Verify PDF content was generated
         run: |
