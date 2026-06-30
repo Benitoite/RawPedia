@@ -1457,7 +1457,12 @@ def is_probably_english_page(path: Path, title: str, text: str) -> bool:
     return True
 
 def clean_links(s: str) -> str:
-    s = re.sub(r'href=(["\"])#ZgotmplZ\1', 'href="#"', s, flags=re.I)
+    # Hugo sometimes emits #ZgotmplZ for unsafe/failed URLs.
+    # Make them harmless so WeasyPrint stops reporting missing anchors.
+    s = re.sub(r'\bhref=(["\'])#ZgotmplZ\1', 'href="#"', s, flags=re.I)
+    s = re.sub(r'\bsrc=(["\'])#ZgotmplZ\1', 'src=""', s, flags=re.I)
+    s = re.sub(r'\bdata-src=(["\'])#ZgotmplZ\1', 'data-src=""', s, flags=re.I)
+    s = s.replace("#ZgotmplZ", "#")
     return s
 
 def page_kind(title: str, rel: str) -> tuple[int, str]:
@@ -1801,6 +1806,109 @@ def rewrite_images(s: str, page_path: Path, page_title: str, page_rel: str) -> s
     s = re.sub(
         r'<(img|source)\b[^>]*>',
         repl,
+        s,
+        flags=re.I | re.S,
+    )
+
+    return s
+
+def rewrite_remaining_root_asset_urls(s: str, page_path: Path) -> str:
+    """
+    Final safety pass for Hugo/RawPedia absolute-root asset URLs.
+
+    Converts leftovers like:
+        src="/images/foo.png"
+        href="/images/foo.png"
+        url("/images/foo.png")
+        srcset="/foo.png 1x, /bar.png 2x"
+
+    into file:// URIs so WeasyPrint does not try:
+        file:///images/foo.png
+    """
+    asset_ext_pattern = r"(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)"
+
+    def resolve_url_value(value: str) -> str:
+        raw = html.unescape(value or "").strip()
+
+        if not raw:
+            return value
+
+        if raw.startswith(("http://", "https://", "data:", "mailto:", "#", "file://")):
+            return value
+
+        found = resolve_local_asset(raw, page_path)
+
+        if found:
+            return found.resolve().as_uri()
+
+        return value
+
+    def attr_repl(m):
+        attr = m.group(1)
+        quote = m.group(2)
+        value = m.group(3)
+
+        new_value = resolve_url_value(value)
+
+        return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
+
+    # src="/foo.png", href="/foo.png", data-src="/foo.png", etc.
+    s = re.sub(
+        rf'\b(src|href|data-src|data-original|data-lazy-src)=([\'"])(/[^\'"]+?\.{asset_ext_pattern}(?:\?[^\'"]*)?)\2',
+        attr_repl,
+        s,
+        flags=re.I | re.S,
+    )
+
+    def srcset_repl(m):
+        attr = m.group(1)
+        quote = m.group(2)
+        value = m.group(3)
+
+        parts = []
+
+        for candidate in value.split(","):
+            candidate = candidate.strip()
+
+            if not candidate:
+                continue
+
+            bits = candidate.split()
+            url = bits[0]
+            descriptor = " ".join(bits[1:])
+
+            new_url = resolve_url_value(url)
+
+            if descriptor:
+                parts.append(f"{new_url} {descriptor}")
+            else:
+                parts.append(new_url)
+
+        return f'{attr}={quote}{html.escape(", ".join(parts), quote=True)}{quote}'
+
+    # srcset="/foo.png 1x, /bar.png 2x"
+    s = re.sub(
+        r'\b(srcset)=([\'"])(.*?)\2',
+        srcset_repl,
+        s,
+        flags=re.I | re.S,
+    )
+
+    def css_url_repl(m):
+        quote = m.group(1) or ""
+        value = m.group(2)
+
+        new_value = resolve_url_value(value)
+
+        if quote:
+            return f'url({quote}{new_value}{quote})'
+
+        return f'url({new_value})'
+
+    # CSS url("/foo.png") or url(/foo.png)
+    s = re.sub(
+        rf'url\(\s*([\'"]?)(/[^\'")]+?\.{asset_ext_pattern}(?:\?[^\'")]*)?)\1\s*\)',
+        css_url_repl,
         s,
         flags=re.I | re.S,
     )
@@ -2211,10 +2319,10 @@ for page in all_pages_raw:
         suppressed_redirects.append(rel)
         skip_reasons["redirect-after-clean"].append(rel)
         continue
-
-    content = rewrite_images(content, page, title, rel)
-    content = prefix_ids_and_anchors(content, page_id)
-    content = strip_empty_leading_blocks(content)
+content = rewrite_images(content, page, title, rel)
+content = rewrite_remaining_root_asset_urls(content, page)
+content = prefix_ids_and_anchors(content, page_id)
+content = strip_empty_leading_blocks(content)
 
     article_toc = build_article_toc(content, page_id)
 
@@ -2239,9 +2347,9 @@ for page in all_pages_raw:
         fallback = re.sub(r"<header\b.*?</header>", "", fallback, flags=re.I | re.S)
         fallback = re.sub(r"<footer\b.*?</footer>", "", fallback, flags=re.I | re.S)
         fallback = re.sub(r"<nav\b.*?</nav>", "", fallback, flags=re.I | re.S)
-
         fallback = clean_links(fallback)
         fallback = rewrite_images(fallback, page, title, rel)
+        fallback = rewrite_remaining_root_asset_urls(fallback, page)
         fallback = prefix_ids_and_anchors(fallback, page_id)
         fallback = strip_empty_leading_blocks(fallback)
 
