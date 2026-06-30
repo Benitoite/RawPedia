@@ -3553,6 +3553,69 @@ else:
 PY
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
+echo
+echo "---- REAL img tag diagnostic ----"
+
+python3 - "$OUTPUT_HTML" <<'REAL_IMG_DIAGNOSTIC'
+import re
+import sys
+import html
+from pathlib import Path
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+imgs = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
+
+print(f"img tags total: {len(imgs)}")
+
+has_src = 0
+has_srcset = 0
+has_data = 0
+no_src = 0
+
+src_samples = []
+tag_samples = []
+
+for tag in imgs:
+    tag_one = re.sub(r"\s+", " ", tag).strip()
+
+    src = re.search(r'\bsrc\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
+    src_unquoted = re.search(r'\bsrc\s*=\s*([^"\'\s>]+)', tag, flags=re.I | re.S)
+    srcset = re.search(r'\bsrcset\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
+    data = re.search(r'\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
+
+    if src or src_unquoted:
+        has_src += 1
+        value = src.group(2) if src else src_unquoted.group(1)
+        if len(src_samples) < 80:
+            src_samples.append(html.unescape(value).strip())
+    else:
+        no_src += 1
+        if len(tag_samples) < 40:
+            tag_samples.append(tag_one)
+
+    if srcset:
+        has_srcset += 1
+
+    if data:
+        has_data += 1
+
+print(f"img with src: {has_src}")
+print(f"img with srcset: {has_srcset}")
+print(f"img with data/lazy src: {has_data}")
+print(f"img with NO src: {no_src}")
+
+print()
+print("sample src values:")
+for item in src_samples[:80]:
+    print(f"  {item}")
+
+print()
+print("sample img tags with NO src:")
+for item in tag_samples[:40]:
+    print(f"  {item}")
+REAL_IMG_DIAGNOSTIC
+
 echo "🖼 Local-only image URL cleanup before PDF render..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_GIT_DIR" <<'RAWPEDIA_LOCAL_IMAGE_CLEANUP'
