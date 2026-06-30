@@ -3482,7 +3482,7 @@ hr {{
 </body>
 </html>
 """)
-html_text = OUTPUT_HTML.read_text(encohtml_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+html_text = OUTPUT_HTML.read_text(encohtml_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace"))
 
 total_img_tags = len(re.findall(r"<img\b", html_text, flags=re.I))
 file_image_refs = len(re.findall(r'src=["\']file://', html_text, flags=re.I))
