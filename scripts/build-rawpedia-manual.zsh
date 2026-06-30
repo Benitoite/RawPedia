@@ -21,12 +21,6 @@ RAWPEDIA_ONLINE_URL="${RAWPEDIA_ONLINE_URL:-https://rawpedia.pixls.us}"
 
 RT_AUTHORS_TXT="${RT_AUTHORS_TXT:-$RT_GIT_DIR/AUTHORS.txt}"
 
-if [[ -d "$HOME/rawpedia/.git" ]]; then
-  RAWPEDIA_GIT_DIR="$HOME/rawpedia"
-else
-  RAWPEDIA_GIT_DIR="$HOME/RawPedia"
-fi
-
 RT_LICENSE_TXT=""
 for candidate in \
   "$HOME/repo-rt/LICENSE" \
