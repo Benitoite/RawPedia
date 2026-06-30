@@ -21,6 +21,7 @@ jobs:
           repository: Beep6581/RawTherapee
           ref: dev
           path: repo-rt
+          fetch-depth: 0
 
       - name: Checkout RawPedia
         uses: actions/checkout@v4
@@ -28,6 +29,8 @@ jobs:
           repository: rawtherapee/rawpedia
           ref: master
           path: RawPedia
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Install dependencies
         run: |
@@ -40,7 +43,8 @@ jobs:
             cairo \
             pango \
             gdk-pixbuf \
-            libffi
+            libffi \
+            node
 
           python3 -m venv "$GITHUB_WORKSPACE/.venv"
           "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip
@@ -49,7 +53,29 @@ jobs:
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
           hugo version
+          node --version
+          npm --version
           "$GITHUB_WORKSPACE/.venv/bin/weasyprint" --version
+
+      - name: Bootstrap RawPedia theme assets
+        run: |
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE/RawPedia"
+
+          git submodule status --recursive || true
+
+          if [[ -d themes/hugo-bootstrap-bare/assets ]]; then
+            cd themes/hugo-bootstrap-bare/assets
+            npm install
+          else
+            echo "❌ Expected theme asset directory missing:"
+            echo "themes/hugo-bootstrap-bare/assets"
+            echo
+            echo "---- themes directory ----"
+            find "$GITHUB_WORKSPACE/RawPedia/themes" -maxdepth 4 -type d | sort || true
+            exit 1
+          fi
 
       - name: Build RawPedia Hugo site
         run: |
@@ -77,11 +103,37 @@ jobs:
 
           if [[ "$HTML_COUNT" -lt 2 ]]; then
             echo "❌ Hugo generated fewer than 2 HTML files."
-            echo "---- RawPedia repo root ----"
-            ls -la "$GITHUB_WORKSPACE/RawPedia"
-            echo "---- RawPedia content dir ----"
-            find "$GITHUB_WORKSPACE/RawPedia/content" -maxdepth 3 -type f | sort | head -80 || true
             exit 1
+          fi
+
+          echo "---- Sanity check generated page content ----"
+          FIRST_ENGLISH_PAGE="$(
+            find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "index.html" \
+              ! -path "*/fr/*" \
+              ! -path "*/index.fr/*" \
+              ! -path "*/index.es/*" \
+              ! -path "*/index.it/*" \
+              ! -path "*/index.jp/*" \
+              ! -path "*/index.pt/*" \
+              | sort \
+              | head -1
+          )"
+
+          echo "FIRST_ENGLISH_PAGE=$FIRST_ENGLISH_PAGE"
+
+            if [[ -n "$FIRST_ENGLISH_PAGE" ]]; then
+            wc -c "$FIRST_ENGLISH_PAGE"
+
+            PLAIN_LEN="$(
+              perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
+                | wc -c \
+                | tr -d ' '
+            )"
+
+            echo "PLAIN_LEN=$PLAIN_LEN"
+            echo "PLAIN_HEAD:"
+            perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
+              | cut -c 1-500
           fi
 
       - name: Prepare local paths expected by script
@@ -145,8 +197,11 @@ jobs:
             echo "---- selected-pages.txt ----"
             cat rawpedia_book/selected-pages.txt 2>/dev/null || true
             echo
-            echo "---- skip-reasons.txt ----"
-            cat rawpedia_book/skip-reasons.txt 2>/dev/null || true
+            echo "---- skip-reasons first 220 lines ----"
+            head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
+            echo
+            echo "---- skip-reasons category summary ----"
+            grep -n "^count:\|^not-\|^suppressed-\|^redirect" rawpedia_book/skip-reasons.txt 2>/dev/null || true
             echo
             echo "---- suppressed-redirect-pages.txt ----"
             cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
@@ -174,11 +229,7 @@ jobs:
             echo "---- Pages all ----"
             head -80 rawpedia_book/pages-all.txt 2>/dev/null || true
             echo "---- Skip reasons ----"
-            cat rawpedia_book/skip-reasons.txt 2>/dev/null | head -160 || true
-            echo "---- Suppressed redirects ----"
-            cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null | head -80 || true
-            echo "---- Suppressed main pages ----"
-            cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null | head -80 || true
+            head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
             exit 1
           fi
 
@@ -189,7 +240,7 @@ jobs:
           name: rawtherapee-manual-pdf
           path: rawtherapee_manual.pdf
           if-no-files-found: warn
-          
+
       - name: Upload build reports
         if: always()
         uses: actions/upload-artifact@v4
