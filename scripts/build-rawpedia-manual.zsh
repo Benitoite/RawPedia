@@ -1401,6 +1401,10 @@ def should_suppress_page(title: str, rel: str, full_text: str) -> tuple[bool, st
     return False, ""
 
 def is_probably_english_page(path: Path, title: str, text: str) -> bool:
+    """
+    Keep English pages and reject obvious translated pages by URL shape.
+    Do not use broad content-language guessing; RawPedia root pages are English.
+    """
     rel = rel_from_source(path)
     rel_lower = rel.lower()
     parts = rel_lower.split("/")
@@ -1408,50 +1412,36 @@ def is_probably_english_page(path: Path, title: str, text: str) -> bool:
     if parts and parts[0] in language_codes:
         return False
 
+    if re.search(r"(^|/)index\.(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)(/|\.html$)", rel_lower):
+        return False
+
     route = re.sub(r"/index\.html$", "", rel_lower)
     route = re.sub(r"\.html$", "", route)
     slug = route.split("/")[-1]
 
-    if re.search(r"(^|[-_])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", slug):
+    if re.search(r"(^|[-_.])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", slug):
         return False
 
-    title_clean = html.unescape(title).strip()
-    title_lower = title_clean.lower()
-
-    if re.search(r"\s+(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", title_lower):
-        return False
-
-    m = re.search(r"<html[^>]*\blang=[\"']([^\"']+)[\"']", text, flags=re.I)
-    if m:
-        lang = m.group(1).lower()
-        if not lang.startswith("en"):
-            return False
-
-    translated_title_words = [
-        "premier pas", "profondeur", "options en ligne", "éditer",
-        "généralités", "utilisation", "dépendances", "compilation",
-        "réglages", "ajouter", "le plugin", "mode opératoire",
-        "prise en charge", "nitidezza", "riduzione", "profili di",
-        "creare profili", "bordi e", "descargar", "opciones",
-        "procesamiento", "preferencias", "añadir", "soporte",
-        "profundidad", "contribuir", "compilando", "descàrrega", "baixar",
+    translated_slug_needles = [
+        "bordi_e_",
+        "nitidezza",
+        "riduzione_rumore",
+        "riduzione_",
+        "creare_profili",
+        "descargar",
+        "opciones",
+        "procesamiento",
+        "preferencias",
+        "ajustes",
+        "premier",
+        "premiers",
+        "reglages",
+        "réglages",
+        "telecharg",
+        "télécharg",
     ]
 
-    if any(word in title_lower for word in translated_title_words):
-        return False
-
-    sample = html.unescape(re.sub(r"<[^>]+>", " ", text[:16000])).lower()
-
-    non_english_clues = [
-        "table des matières", "sommaire", "premiers pas", "utilisation",
-        "réglages", "généralités", "questo", "questa", "strumento",
-        "elaborazione", "descargar", "opciones", "ajustes", "herramienta",
-        "preferencias", "procesamiento", "índice", "tabla de contenidos",
-    ]
-
-    hits = sum(1 for clue in non_english_clues if clue in sample)
-
-    if hits >= 2:
+    if any(needle in rel_lower for needle in translated_slug_needles):
         return False
 
     return True
@@ -2285,9 +2275,108 @@ def build_technical_index(infos):
         }
 
     return result
+
 infos = []
+skip_reasons = defaultdict(list)
+selected_pages = []
 
 for page in all_pages_raw:
+    text = read_text(page)
+    rel = rel_from_source(page)
+    title = title_from_doc(text, rel)
+
+    suppress, reason = should_suppress_page(title, rel, text)
+
+    if suppress:
+        if reason == "redirect":
+            suppressed_redirects.append(rel)
+        elif reason == "main-page-variant":
+            suppressed_main_pages.append(rel)
+
+        skip_reasons[f"suppressed-{reason}"].append(rel)
+        continue
+
+    if not is_probably_english_page(page, title, text):
+        skip_reasons["not-probably-english"].append(rel)
+        continue
+
+    page_id = make_id(rel)
+
+    raw_content = extract_main_or_body(text)
+    content = strip_bad_parts(raw_content)
+    content = clean_links(content)
+
+    if is_redirect_page_text(content, title):
+        suppressed_redirects.append(rel)
+        skip_reasons["redirect-after-clean"].append(rel)
+        continue
+
+    content = rewrite_images(content, page, title, rel)
+    content = rewrite_remaining_root_asset_urls(content, page)
+    content = prefix_ids_and_anchors(content, page_id)
+    content = strip_empty_leading_blocks(content)
+
+    article_toc = build_article_toc(content, page_id)
+
+    if article_toc:
+        content = article_toc + "\n" + content
+
+    content = strip_empty_leading_blocks(content)
+
+    if not has_meaningful_content(content, title):
+        fallback = text
+
+        body_match = re.search(r"<body\b[^>]*>(.*?)</body>", text, flags=re.I | re.S)
+        if body_match:
+            fallback = body_match.group(1)
+
+        fallback = re.sub(r"<script\b.*?</script>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<noscript\b.*?</noscript>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<style\b.*?</style>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<header\b.*?</header>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<footer\b.*?</footer>", "", fallback, flags=re.I | re.S)
+        fallback = re.sub(r"<nav\b.*?</nav>", "", fallback, flags=re.I | re.S)
+
+        fallback = clean_links(fallback)
+        fallback = rewrite_images(fallback, page, title, rel)
+        fallback = rewrite_remaining_root_asset_urls(fallback, page)
+        fallback = prefix_ids_and_anchors(fallback, page_id)
+        fallback = strip_empty_leading_blocks(fallback)
+
+        if is_redirect_page_text(fallback, title):
+            suppressed_redirects.append(rel)
+            skip_reasons["redirect-after-fallback"].append(rel)
+            continue
+
+        if has_meaningful_content(fallback, title):
+            fallback_toc = build_article_toc(fallback, page_id)
+
+            if fallback_toc:
+                fallback = fallback_toc + "\n" + fallback
+
+            content = strip_empty_leading_blocks(fallback)
+        else:
+            plain_len = len(html_to_plain_text(content))
+            fallback_plain_len = len(html_to_plain_text(fallback))
+            skip_reasons[f"not-meaningful-content normal={plain_len} fallback={fallback_plain_len}"].append(rel)
+            continue
+
+    order, section = page_kind(title, rel)
+
+    infos.append({
+        "path": page,
+        "rel": rel,
+        "id": page_id,
+        "title": title,
+        "section": section,
+        "section_id": section_toc_id(section),
+        "section_order": order,
+        "content": content,
+    })
+
+    selected_pages.append(f"{title} [{rel}]")
+
+infos.sort(key=page_sort_key)
 
 selected_report = OUTPUT_HTML.parent / "selected-pages.txt"
 selected_report.write_text("\n".join(selected_pages) + "\n", encoding="utf-8")
