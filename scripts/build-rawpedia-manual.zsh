@@ -20,9 +20,7 @@ RT_AUTHORS_TXT="$HOME/repo-rt/AUTHORS.txt"
 
 RT_GIT_DIR="$HOME/repo-rt"
 
-if [[ -d "$HOME/RawPedia/.git" ]]; then
-  RAWPEDIA_GIT_DIR="$HOME/RawPedia"
-elif [[ -d "$HOME/rawpedia/.git" ]]; then
+if [[ -d "$HOME/rawpedia/.git" ]]; then
   RAWPEDIA_GIT_DIR="$HOME/rawpedia"
 else
   RAWPEDIA_GIT_DIR="$HOME/RawPedia"
@@ -1772,78 +1770,221 @@ def normalize_term(term: str) -> str:
 
     return term
 
+def canonical_index_key(term: str) -> str:
+    """
+    Collapse duplicate index terms caused by case, punctuation, and simple plurals.
+    """
+    key = html.unescape(term or "")
+    key = key.strip()
+    key = re.sub(r"\s+", " ", key)
+    key = key.lower()
+
+    key = key.replace("–", "-")
+    key = key.replace("—", "-")
+    key = key.replace("_", " ")
+
+    key = re.sub(r"\s*/\s*", "/", key)
+    key = re.sub(r"\s*-\s*", "-", key)
+    key = re.sub(r"[^a-z0-9+./* -]+", "", key)
+    key = re.sub(r"\s+", " ", key).strip()
+
+    words = key.split(" ")
+    singular_words = []
+
+    technical_singletons = {
+        "raw", "rgb", "lab", "xyz", "icc", "dcp", "dng", "jpeg",
+        "png", "tiff", "webp", "heif", "avif", "exif", "iptc",
+        "xmp", "gps", "iso", "ev", "snr", "adc", "cfa", "psf",
+        "otf", "mtf", "fft", "dft", "pca", "clahe", "lens",
+        "focus", "alias", "aliases", "analysis", "series", "chassis",
+        "canvas", "bias", "process", "access", "class", "glass",
+    }
+
+    es_singular_keep = (
+        "ses",
+        "xes",
+        "zes",
+        "ches",
+        "shes",
+    )
+
+    for word in words:
+        if word in technical_singletons:
+            if word == "aliases":
+                word = "alias"
+            singular_words.append(word)
+            continue
+
+        # Simple plural folding, intentionally conservative.
+        if len(word) > 4 and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif len(word) > 4 and word.endswith("ves"):
+            word = word[:-3] + "f"
+        elif len(word) > 4 and word.endswith(es_singular_keep):
+            word = re.sub(r"es$", "", word)
+        elif len(word) > 4 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+            word = word[:-1]
+
+        singular_words.append(word)
+
+    key = " ".join(singular_words)
+    key = re.sub(r"\s+", " ", key).strip()
+
+    return key
+
+def choose_index_display_term(existing: str, candidate: str) -> str:
+    """
+    Prefer a nice-looking index display term while using canonical_index_key()
+    for duplicate detection.
+    """
+    if not existing:
+        return candidate
+
+    existing_seed = existing in technical_terms_seed
+    candidate_seed = candidate in technical_terms_seed
+
+    if candidate_seed and not existing_seed:
+        return candidate
+
+    if existing_seed and not candidate_seed:
+        return existing
+
+    if existing.islower() and not candidate.islower():
+        return candidate
+
+    if len(candidate) < len(existing):
+        return candidate
+
+    return existing
+
 def build_all_technical_terms(infos):
-    terms = set(technical_terms_seed)
+    by_key = {}
 
     stop = {
         "Contents", "Overview", "Introduction", "General", "General Comments",
         "Main Page",
     }
 
+    def add_term(term: str):
+        term = normalize_term(term)
+
+        if not term:
+            return
+
+        if term in stop:
+            return
+
+        if len(term) < 2 or len(term) > 70:
+            return
+
+        if re.search(r"^(the|and|or|for|with|from|this|that)\b", term, flags=re.I):
+            return
+
+        if re.fullmatch(r"\d+", term):
+            return
+
+        key = canonical_index_key(term)
+
+        if not key:
+            return
+
+        old = by_key.get(key, "")
+        by_key[key] = choose_index_display_term(old, term)
+
+    for term in technical_terms_seed:
+        add_term(term)
+
     for info in infos:
         for term in extract_title_terms(info["title"]):
-            terms.add(term)
+            add_term(term)
 
         for term in extract_heading_terms(info["content"]):
-            terms.add(term)
+            add_term(term)
 
         plain = html_to_plain_text(info["title"] + " " + info["content"])
 
         for term in extract_acronym_terms(plain):
-            terms.add(term)
+            add_term(term)
 
-    cleaned = set()
-
-    for term in terms:
-        term = normalize_term(term)
-
-        if not term:
-            continue
-
-        if term in stop:
-            continue
-
-        if len(term) < 2 or len(term) > 70:
-            continue
-
-        if re.search(r"^(the|and|or|for|with|from|this|that)\b", term, flags=re.I):
-            continue
-
-        if re.fullmatch(r"\d+", term):
-            continue
-
-        cleaned.add(term)
-
-    return sorted(cleaned, key=lambda s: s.lower())
+    return sorted(by_key.values(), key=lambda s: s.lower())
 
 def build_technical_index(infos):
     terms = build_all_technical_terms(infos)
+
+    canonical_to_display = {}
+
+    for term in terms:
+        key = canonical_index_key(term)
+        old = canonical_to_display.get(key, "")
+        canonical_to_display[key] = choose_index_display_term(old, term)
+
     index = defaultdict(list)
     primary = defaultdict(set)
-    term_regexes = [(term, compile_term_regex(term)) for term in terms]
+
+    term_regexes = []
+
+    for display_term in canonical_to_display.values():
+        key = canonical_index_key(display_term)
+
+        variants = {
+            display_term,
+            display_term.lower(),
+            display_term.upper(),
+            display_term.title(),
+        }
+
+        if not display_term.lower().endswith("s"):
+            variants.add(display_term + "s")
+        elif len(display_term) > 3:
+            variants.add(display_term[:-1])
+
+        regexes = [
+            compile_term_regex(v)
+            for v in sorted(variants, key=len, reverse=True)
+            if v
+        ]
+
+        term_regexes.append((display_term, key, regexes))
 
     for info in infos:
         text = html_to_plain_text(info["title"] + " " + info["content"])
 
-        for term, rx in term_regexes:
-            if rx.search(text):
-                index[term].append(info)
+        for display_term, key, regexes in term_regexes:
+            if any(rx.search(text) for rx in regexes):
+                index[key].append(info)
 
-                if title_contains_term(info["title"], term):
-                    primary[term].add(info["id"])
+                if title_contains_term(info["title"], display_term):
+                    primary[key].add(info["id"])
 
     result = {}
 
-    for term, refs in sorted(index.items(), key=lambda item: item[0].lower()):
+    seed_keys = {canonical_index_key(term) for term in technical_terms_seed}
+
+    for key, refs in sorted(
+        index.items(),
+        key=lambda item: canonical_to_display.get(item[0], item[0]).lower(),
+    ):
         if not refs:
             continue
 
-        if term not in technical_terms_seed and len(refs) < 2 and term.lower() not in html_to_plain_text(refs[0]["title"]).lower():
+        display_term = canonical_to_display.get(key, key)
+
+        if key not in seed_keys and len(refs) < 2 and display_term.lower() not in html_to_plain_text(refs[0]["title"]).lower():
             continue
 
-        result[term] = {
-            "refs": refs,
-            "primary_ids": primary.get(term, set()),
+        seen = set()
+        unique_refs = []
+
+        for ref in refs:
+            if ref["id"] in seen:
+                continue
+
+            seen.add(ref["id"])
+            unique_refs.append(ref)
+
+        result[display_term] = {
+            "refs": unique_refs,
+            "primary_ids": primary.get(key, set()),
         }
 
     return result
@@ -1996,15 +2137,15 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
   @top-right {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
   @bottom-left {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
@@ -2048,15 +2189,15 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
   @top-right {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
   @bottom-left {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
@@ -2089,15 +2230,15 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
   @top-right {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
   @bottom-left {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
@@ -2130,15 +2271,15 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
   @top-right {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
   @bottom-left {{
     content: counter(page);
-  font-family: Georgia, "Times New Roman", serif;
-    font-size: 12pt;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
     color: #555;
   }}
 
@@ -2319,8 +2460,7 @@ body {{
 
 .contributor-list,
 .authors-list {{
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 11.2pt;
+  font-size: 7.2pt;
   line-height: 1.18;
   color: #333;
   margin-top: 0.1in;
@@ -2352,7 +2492,7 @@ body {{
   column-rule: 0.25pt solid #ddd;
   white-space: pre-wrap;
   font-family: Menlo, Consolas, monospace;
-  font-size: 3.5pt;
+  font-size: 4pt;
   line-height: 1.075;
   overflow-wrap: normal;
   word-break: normal;
@@ -2928,7 +3068,7 @@ hr {{
     out.write("""
 <section class="technical-index" id="technical-index">
 <h1>Technical Index</h1>
-<p class="index-note">Bold page numbers mark pages where the indexed term appears to begin a main article. Page numbers are generated by the PDF renderer. True condensed page ranges require a second pass after final pagination; WeasyPrint target counters cannot compute ranges directly.</p>
+<p class="index-note">Bold page numbers mark pages where the indexed term appears to begin a main article. Case variants and simple plural spellings are folded into one index entry. Page numbers are generated by the PDF renderer. True condensed page ranges require a second pass after final pagination; WeasyPrint target counters cannot compute ranges directly.</p>
 <div class="index-body">
 """)
 
