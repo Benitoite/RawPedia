@@ -1,0 +1,97 @@
+name: Build RawTherapee Manual PDF
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-manual:
+    name: Build RawTherapee Manual
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout manual builder repo
+        uses: actions/checkout@v4
+
+      - name: Checkout RawTherapee
+        uses: actions/checkout@v4
+        with:
+          repository: Beep6581/RawTherapee
+          ref: dev
+          path: repo-rt
+
+      - name: Checkout RawPedia
+        uses: actions/checkout@v4
+        with:
+          repository: rawtherapee/rawpedia
+          ref: master
+          path: RawPedia
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+
+          brew install \
+            hugo \
+            imagemagick \
+            qrencode \
+            cairo \
+            pango \
+            gdk-pixbuf \
+            libffi
+
+          python3 -m pip install --upgrade pip
+          python3 -m pip install weasyprint
+
+      - name: Build RawPedia Hugo site
+        run: |
+          set -euo pipefail
+
+          cd RawPedia
+          rm -rf Public public
+          hugo --destination Public
+
+          test -d Public
+          find Public -type f -name "*.html" | head -20
+
+      - name: Prepare local paths expected by script
+        run: |
+          set -euo pipefail
+
+          rm -rf "$HOME/repo-rt" "$HOME/RawPedia" "$HOME/rawpedia"
+
+          ln -s "$GITHUB_WORKSPACE/repo-rt" "$HOME/repo-rt"
+          ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/RawPedia"
+          ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/rawpedia"
+
+          test -d "$HOME/repo-rt"
+          test -d "$HOME/RawPedia"
+          test -d "$HOME/RawPedia/Public"
+          test -d "$HOME/RawPedia/content"
+
+      - name: Build PDF manual
+        run: |
+          set -euo pipefail
+
+          chmod +x scripts/build-rawpedia-manual.zsh
+          ./scripts/build-rawpedia-manual.zsh
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: rawtherapee-manual-pdf
+          path: rawtherapee_manual.pdf
+          if-no-files-found: error
+
+      - name: Upload build reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: rawpedia-book-reports
+          path: |
+            rawpedia_book/book.html
+            rawpedia_book/*.txt
+            rawpedia_book/*.svg
+            rawpedia_book/*.png
+          if-no-files-found: warn
