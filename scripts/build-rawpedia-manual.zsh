@@ -774,16 +774,53 @@ Game Changer
 """.strip().splitlines()
 
 missing_images = []
-asset_by_name = {}
 suppressed_redirects = []
 suppressed_main_pages = []
 all_contributors = set()
 
-for root, dirs, files in os.walk(SOURCE_DIR):
-    for name in files:
-        p = Path(root) / name
-        if p.suffix.lower() in asset_exts:
-            asset_by_name.setdefault(name.lower(), p.resolve())
+asset_by_name = {}
+asset_by_rel = {}
+
+RAWPEDIA_ROOT = CONTENTS_DIR.parent if CONTENTS_DIR.exists() else SOURCE_DIR.parent
+
+ASSET_SEARCH_ROOTS = [
+    SOURCE_DIR,
+    RAWPEDIA_ROOT / "static",
+    RAWPEDIA_ROOT / "assets",
+    RAWPEDIA_ROOT / "resources",
+    RAWPEDIA_ROOT,
+]
+
+def remember_asset(asset_path: Path, root: Path):
+    try:
+        asset_path = asset_path.resolve()
+    except Exception:
+        return
+
+    if not asset_path.exists():
+        return
+
+    if asset_path.suffix.lower() not in asset_exts:
+        return
+
+    asset_by_name.setdefault(asset_path.name.lower(), asset_path)
+
+    try:
+        rel = str(asset_path.relative_to(root.resolve())).replace("\\", "/").lower()
+        asset_by_rel.setdefault(rel, asset_path)
+    except Exception:
+        pass
+
+for root in ASSET_SEARCH_ROOTS:
+    if not root.exists():
+        continue
+
+    for walk_root, dirs, files in os.walk(root):
+        for name in files:
+            remember_asset(Path(walk_root) / name, root)
+
+print(f"✅ Image/assets indexed by filename: {len(asset_by_name)}")
+print(f"✅ Image/assets indexed by relative path: {len(asset_by_rel)}")
 
 def rel_from_source(path: Path) -> str:
     try:
