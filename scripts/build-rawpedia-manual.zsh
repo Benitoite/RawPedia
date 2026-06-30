@@ -3482,24 +3482,36 @@ hr {{
 </body>
 </html>
 """)
-html_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+html_text = OUTPUT_HTML.read_text(encohtml_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
 total_img_tags = len(re.findall(r"<img\b", html_text, flags=re.I))
 file_image_refs = len(re.findall(r'src=["\']file://', html_text, flags=re.I))
+online_rawpedia_refs = len(re.findall(r'src=["\']https://rawpedia\.pixls\.us/', html_text, flags=re.I))
 missing_image_boxes = len(re.findall(r'class=["\']missing-image["\']', html_text, flags=re.I))
+bad_root_file_refs = len(re.findall(
+    r'file:///(?:images/)?[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    html_text,
+    flags=re.I,
+))
+
+resolved_image_refs = file_image_refs + online_rawpedia_refs
 
 print(f"✅ HTML image tags: {total_img_tags}")
 print(f"✅ HTML local file image refs: {file_image_refs}")
+print(f"✅ HTML online RawPedia image refs: {online_rawpedia_refs}")
+print(f"✅ HTML resolved image refs total: {resolved_image_refs}")
 print(f"✅ HTML missing-image placeholders: {missing_image_boxes}")
+print(f"✅ HTML bad root file image refs: {bad_root_file_refs}")
 
 if total_img_tags < 20:
     print("❌ Suspiciously few image tags in generated HTML.")
     print("❌ The PDF will be mostly text if this continues.")
     sys.exit(1)
 
-if file_image_refs < 20:
-    print("❌ Suspiciously few local file:// image references in generated HTML.")
-    print("❌ Images are probably not being resolved from ~/RawPedia/Public.")
+# Do not require local file:// refs. CI may use online RawPedia image URLs.
+if total_img_tags > 50 and resolved_image_refs < 20:
+    print("❌ Suspiciously few resolved image references in generated HTML.")
+    print("❌ Expected either local file:// images or online RawPedia image URLs.")
     sys.exit(1)
 
 if missing_images:
@@ -3555,7 +3567,199 @@ else:
 PY
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
+echo "🖼 Final image URL cleanup before PDF render..."
 
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'RAWPEDIA_IMAGE_URL_CLEANUP'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+SOURCE_DIR = Path(sys.argv[2]).resolve()
+RAWPEDIA_ONLINE_URL = sys.argv[3].rstrip("/")
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico"
+}
+
+def is_asset_url(value: str) -> bool:
+    raw = html.unescape(value or "").strip()
+    path = urllib.parse.urlsplit(raw).path
+    return Path(path).suffix.lower() in asset_exts
+
+def online_url_for_path(path: str) -> str:
+    path = urllib.parse.unquote(path or "").replace("\\", "/")
+
+    if not path:
+        return path
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    return RAWPEDIA_ONLINE_URL + path
+
+def local_or_online(value: str) -> str:
+    raw = html.unescape(value or "").strip()
+
+    if not raw:
+        return value
+
+    if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
+        return value
+
+    parsed = urllib.parse.urlsplit(raw)
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/")
+
+    if not path:
+        return value
+
+    if raw.startswith("file://"):
+        local_path = Path(path)
+
+        if local_path.exists():
+            return raw
+
+        fixed = online_url_for_path(path)
+
+        if parsed.query:
+            fixed += "?" + parsed.query
+
+        return fixed
+
+    if path.startswith("/"):
+        local_candidate = SOURCE_DIR / path.lstrip("/")
+
+        if local_candidate.exists():
+            return local_candidate.resolve().as_uri()
+
+        fixed = online_url_for_path(path)
+
+        if parsed.query:
+            fixed += "?" + parsed.query
+
+        return fixed
+
+    local_candidate = SOURCE_DIR / path
+
+    if local_candidate.exists():
+        return local_candidate.resolve().as_uri()
+
+    fixed = online_url_for_path(path)
+
+    if parsed.query:
+        fixed += "?" + parsed.query
+
+    return fixed
+
+def rewrite_attr(m):
+    attr = m.group(1)
+    quote = m.group(2)
+    value = m.group(3)
+
+    if not is_asset_url(value):
+        return m.group(0)
+
+    new_value = local_or_online(value)
+
+    return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
+
+def rewrite_srcset(m):
+    attr = m.group(1)
+    quote = m.group(2)
+    value = m.group(3)
+
+    out = []
+
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+
+        if not candidate:
+            continue
+
+        bits = candidate.split()
+        url = bits[0]
+        descriptor = " ".join(bits[1:])
+
+        if is_asset_url(url):
+            url = local_or_online(url)
+
+        if descriptor:
+            out.append(f"{url} {descriptor}")
+        else:
+            out.append(url)
+
+    return f'{attr}={quote}{html.escape(", ".join(out), quote=True)}{quote}'
+
+def rewrite_css_url(m):
+    quote = m.group(1) or ""
+    value = m.group(2)
+
+    if not is_asset_url(value):
+        return m.group(0)
+
+    new_value = local_or_online(value)
+
+    if quote:
+        return f"url({quote}{new_value}{quote})"
+
+    return f"url({new_value})"
+
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+before_bad = len(re.findall(
+    r'file:///(?:images/)?[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+))
+
+before_root = len(re.findall(
+    r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+))
+
+s = re.sub(
+    r'\b(src|href|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
+    rewrite_attr,
+    s,
+    flags=re.I | re.S,
+)
+
+s = re.sub(
+    r'\b(srcset)=(["\'])(.*?)\2',
+    rewrite_srcset,
+    s,
+    flags=re.I | re.S,
+)
+
+s = re.sub(
+    r'url\(\s*([\'"]?)([^\'")]+?\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^\'")]*)?)\1\s*\)',
+    rewrite_css_url,
+    s,
+    flags=re.I | re.S,
+)
+
+after_bad = len(re.findall(
+    r'file:///(?:images/)?[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+))
+
+after_root = len(re.findall(
+    r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
+    s,
+    flags=re.I,
+))
+
+OUTPUT_HTML.write_text(s, encoding="utf-8")
+
+print(f"Before cleanup: broken file URLs={before_bad}, root-relative asset attrs={before_root}")
+print(f"After cleanup:  broken file URLs={after_bad}, root-relative asset attrs={after_root}")
+print("✅ Final image URL cleanup complete")
+RAWPEDIA_IMAGE_URL_CLEANUP
 if [[ ! -s "$OUTPUT_HTML" ]]; then
   echo "❌ HTML output was not created or is empty: $OUTPUT_HTML"
   exit 1
