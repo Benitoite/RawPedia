@@ -1,24 +1,25 @@
 #!/bin/zsh
 set -euo pipefail
 
-SOURCE_DIR="$HOME/RawPedia/Public"
-CONTENTS_DIR="$HOME/RawPedia/content"
-WORK_DIR="rawpedia_book"
-OUTPUT_HTML="$WORK_DIR/book.html"
-OUTPUT_PDF="rawtherapee_manual.pdf"
+SOURCE_DIR="${SOURCE_DIR:-$HOME/RawPedia/Public}"
+CONTENTS_DIR="${CONTENTS_DIR:-$HOME/RawPedia/content}"
+WORK_DIR="${WORK_DIR:-rawpedia_book}"
+OUTPUT_HTML="${OUTPUT_HTML:-$WORK_DIR/book.html}"
+OUTPUT_PDF="${OUTPUT_PDF:-rawtherapee_manual.pdf}"
 
-RT_COVER_ICNS="$HOME/repo-rt/tools/osx/rawtherapee.icns"
+RT_GIT_DIR="${RT_GIT_DIR:-$HOME/repo-rt}"
+RAWPEDIA_GIT_DIR="${RAWPEDIA_GIT_DIR:-$HOME/RawPedia}"
+
+RT_COVER_ICNS="${RT_COVER_ICNS:-$RT_GIT_DIR/tools/osx/rawtherapee.icns}"
 RT_COVER_PNG="$WORK_DIR/rawtherapee-cover-icon.png"
 
-RT_HEADER_ICO="$HOME/repo-rt/rtdata/images/rawtherapee.ico"
+RT_HEADER_ICO="${RT_HEADER_ICO:-$RT_GIT_DIR/rtdata/images/rawtherapee.ico}"
 RT_HEADER_PNG="$WORK_DIR/rawtherapee-header-icon.png"
 
 RAWPEDIA_QR_SVG="$WORK_DIR/rawpedia-online-qr.svg"
-RAWPEDIA_ONLINE_URL="https://rawpedia.pixls.us"
+RAWPEDIA_ONLINE_URL="${RAWPEDIA_ONLINE_URL:-https://rawpedia.pixls.us}"
 
-RT_AUTHORS_TXT="$HOME/repo-rt/AUTHORS.txt"
-
-RT_GIT_DIR="$HOME/repo-rt"
+RT_AUTHORS_TXT="${RT_AUTHORS_TXT:-$RT_GIT_DIR/AUTHORS.txt}"
 
 if [[ -d "$HOME/rawpedia/.git" ]]; then
   RAWPEDIA_GIT_DIR="$HOME/rawpedia"
