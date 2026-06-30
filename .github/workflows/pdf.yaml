@@ -238,7 +238,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rawtherapee-manual-pdf
-          path: rawtherapee_manual.pdf
+          path: |
+            rawtherapee_manual.pdf
           if-no-files-found: warn
 
       - name: Upload build reports
