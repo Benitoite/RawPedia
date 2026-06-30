@@ -100,35 +100,34 @@ jobs:
 
           ls -la "$HOME"
 
-      - name: Build PDF manual
-        env:
-          SOURCE_DIR: ${{ github.workspace }}/RawPedia/Public
-          CONTENTS_DIR: ${{ github.workspace }}/RawPedia/content
-          RT_GIT_DIR: ${{ github.workspace }}/repo-rt
-          RAWPEDIA_GIT_DIR: ${{ github.workspace }}/RawPedia
-          RT_COVER_ICNS: ${{ github.workspace }}/repo-rt/tools/osx/rawtherapee.icns
-          RT_HEADER_ICO: ${{ github.workspace }}/repo-rt/rtdata/images/rawtherapee.ico
-          RT_AUTHORS_TXT: ${{ github.workspace }}/repo-rt/AUTHORS.txt
+      - name: Build RawPedia Hugo site
         run: |
           set -euo pipefail
 
-          export PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH"
+          cd "$GITHUB_WORKSPACE/RawPedia"
 
-          which python
-          which hugo
-          which weasyprint
-          weasyprint --version
+          rm -rf Public public
 
-          echo "SOURCE_DIR=$SOURCE_DIR"
-          echo "CONTENTS_DIR=$CONTENTS_DIR"
-          echo "RT_GIT_DIR=$RT_GIT_DIR"
-          echo "RAWPEDIA_GIT_DIR=$RAWPEDIA_GIT_DIR"
+          hugo \
+            --gc \
+            --minify \
+            --printPathWarnings \
+            --destination "$GITHUB_WORKSPACE/RawPedia/Public"
 
-          echo "---- HTML files passed to manual script ----"
-          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -50
+          echo "---- Hugo output root ----"
+          ls -la "$GITHUB_WORKSPACE/RawPedia/Public"
 
-          chmod +x scripts/build-rawpedia-manual.zsh
-          ./scripts/build-rawpedia-manual.zsh
+          echo "---- First generated HTML files ----"
+          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -80
+
+          echo "---- HTML count ----"
+          HTML_COUNT="$(find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | wc -l | tr -d ' ')"
+          echo "HTML_COUNT=$HTML_COUNT"
+
+          if [[ "$HTML_COUNT" -lt 2 ]]; then
+            echo "❌ Hugo generated fewer than 2 HTML files."
+            exit 1
+          fi
 
       - name: Verify PDF content was generated
         run: |
