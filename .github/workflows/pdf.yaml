@@ -371,12 +371,35 @@ jobs:
               print(item)
 
           print()
+          print("sample unresolved image attrs:")
+          
+          img_tags = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
+          unresolved = []
+          
+          for tag in img_tags:
+              m = re.search("""\\bsrc\\s*=\\s*(['"])(.*?)\\1""", tag, flags=re.I | re.S)
+              if not m:
+                  continue
+          
+              src = m.group(2).strip()
+          
+              if src.startswith(("file://", "data:")):
+                  continue
+          
+              if re.search(r"\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?|$)", src, flags=re.I):
+                  unresolved.append(src)
+          
+          for item in unresolved[:100]:
+              print(item)
+          
+          print()
           print("sample github QR hrefs:")
+          
           github_hits = re.findall(
-              r'https://github\\.com/RawTherapee/RawPedia[^"\\'< ]+',
+              """https://github\\.com/RawTherapee/RawPedia[^"'<> ]+""",
               s,
           )
-
+          
           for item in github_hits[:100]:
               print(item)
           PY
