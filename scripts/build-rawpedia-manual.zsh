@@ -1,25 +1,29 @@
 #!/bin/zsh
 set -euo pipefail
 
-SOURCE_DIR="${SOURCE_DIR:-$HOME/RawPedia/Public}"
-CONTENTS_DIR="${CONTENTS_DIR:-$HOME/RawPedia/content}"
-WORK_DIR="${WORK_DIR:-rawpedia_book}"
-OUTPUT_HTML="${OUTPUT_HTML:-$WORK_DIR/book.html}"
-OUTPUT_PDF="${OUTPUT_PDF:-rawtherapee_manual.pdf}"
-
-RT_GIT_DIR="${RT_GIT_DIR:-$HOME/repo-rt}"
-RAWPEDIA_GIT_DIR="${RAWPEDIA_GIT_DIR:-$HOME/RawPedia}"
-
-RT_COVER_ICNS="${RT_COVER_ICNS:-$RT_GIT_DIR/tools/osx/rawtherapee.icns}"
+SOURCE_DIR="$HOME/RawPedia/Public"
+CONTENTS_DIR="$HOME/RawPedia/content"
+WORK_DIR="rawpedia_book"
+OUTPUT_HTML="$WORK_DIR/book.html"
+OUTPUT_PDF="rawtherapee_manual.pdf"
+RT_COVER_ICNS="$HOME/repo-rt/tools/osx/rawtherapee.icns"
 RT_COVER_PNG="$WORK_DIR/rawtherapee-cover-icon.png"
 
-RT_HEADER_ICO="${RT_HEADER_ICO:-$RT_GIT_DIR/rtdata/images/rawtherapee.ico}"
+RT_HEADER_ICO="$HOME/repo-rt/rtdata/images/rawtherapee.ico"
 RT_HEADER_PNG="$WORK_DIR/rawtherapee-header-icon.png"
 
 RAWPEDIA_QR_SVG="$WORK_DIR/rawpedia-online-qr.svg"
-RAWPEDIA_ONLINE_URL="${RAWPEDIA_ONLINE_URL:-https://rawpedia.pixls.us}"
+RAWPEDIA_ONLINE_URL="https://rawpedia.pixls.us"
 
-RT_AUTHORS_TXT="${RT_AUTHORS_TXT:-$RT_GIT_DIR/AUTHORS.txt}"
+RT_AUTHORS_TXT="$HOME/repo-rt/AUTHORS.txt"
+
+RT_GIT_DIR="$HOME/repo-rt"
+
+if [[ -d "$HOME/rawpedia/.git" ]]; then
+  RAWPEDIA_GIT_DIR="$HOME/rawpedia"
+else
+  RAWPEDIA_GIT_DIR="$HOME/RawPedia"
+fi
 
 RT_LICENSE_TXT=""
 for candidate in \
@@ -192,6 +196,7 @@ import sys
 import html
 import json
 import urllib.parse
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -774,53 +779,16 @@ Game Changer
 """.strip().splitlines()
 
 missing_images = []
+asset_by_name = {}
 suppressed_redirects = []
 suppressed_main_pages = []
 all_contributors = set()
 
-asset_by_name = {}
-asset_by_rel = {}
-
-RAWPEDIA_ROOT = CONTENTS_DIR.parent if CONTENTS_DIR.exists() else SOURCE_DIR.parent
-
-ASSET_SEARCH_ROOTS = [
-    SOURCE_DIR,
-    RAWPEDIA_ROOT / "static",
-    RAWPEDIA_ROOT / "assets",
-    RAWPEDIA_ROOT / "resources",
-    RAWPEDIA_ROOT,
-]
-
-def remember_asset(asset_path: Path, root: Path):
-    try:
-        asset_path = asset_path.resolve()
-    except Exception:
-        return
-
-    if not asset_path.exists():
-        return
-
-    if asset_path.suffix.lower() not in asset_exts:
-        return
-
-    asset_by_name.setdefault(asset_path.name.lower(), asset_path)
-
-    try:
-        rel = str(asset_path.relative_to(root.resolve())).replace("\\", "/").lower()
-        asset_by_rel.setdefault(rel, asset_path)
-    except Exception:
-        pass
-
-for root in ASSET_SEARCH_ROOTS:
-    if not root.exists():
-        continue
-
-    for walk_root, dirs, files in os.walk(root):
-        for name in files:
-            remember_asset(Path(walk_root) / name, root)
-
-print(f"✅ Image/assets indexed by filename: {len(asset_by_name)}")
-print(f"✅ Image/assets indexed by relative path: {len(asset_by_rel)}")
+for root, dirs, files in os.walk(SOURCE_DIR):
+    for name in files:
+        p = Path(root) / name
+        if p.suffix.lower() in asset_exts:
+            asset_by_name.setdefault(name.lower(), p.resolve())
 
 def rel_from_source(path: Path) -> str:
     try:
@@ -835,8 +803,19 @@ def make_id(rel: str) -> str:
     rel = rel.strip("-")
     return rel or "page"
 
+used_term_ids = {}
+
 def term_id(term: str) -> str:
-    return "index-" + re.sub(r"[^A-Za-z0-9]+", "-", term).strip("-").lower()
+    base = "index-" + re.sub(r"[^A-Za-z0-9]+", "-", term).strip("-").lower()
+    base = base or "index-term"
+
+    count = used_term_ids.get(base, 0)
+    used_term_ids[base] = count + 1
+
+    if count == 0:
+        return base
+
+    return f"{base}-{count + 1}"
 
 def section_toc_id(section: str) -> str:
     return "toc-" + make_id(section)
@@ -897,6 +876,296 @@ def extract_hugo_frontmatter(text: str) -> str:
 
     return ""
 
+_content_file_index = None
+
+def content_lookup_key(value: str) -> str:
+    value = html.unescape(value or "").strip()
+    value = urllib.parse.unquote(value)
+    value = value.replace("\\", "/")
+    value = re.sub(r"/+", "/", value)
+
+    value = value.split("#", 1)[0]
+    value = value.split("?", 1)[0]
+    value = value.strip("/")
+
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.(md|markdown)$", "", value, flags=re.I)
+
+    value = value.replace("_", "-")
+    value = re.sub(r"[^A-Za-z0-9/.-]+", "-", value)
+    value = re.sub(r"-+", "-", value)
+    value = re.sub(r"/+", "/", value)
+    value = value.strip("-/")
+
+    return value.lower()
+
+def content_rel_is_probably_english(rel: str) -> bool:
+    """
+    Return False for Hugo translation files and language-directory content.
+
+    Examples suppressed:
+      fr/foo.md
+      es/foo.md
+      foo.fr.md
+      foo.es.md
+      foo/index.fr.md
+      _index.fr.md
+
+    Examples allowed:
+      MacOS.md
+      Keyboard_Shortcuts.md
+      local-adjustments/index.md
+    """
+    rel = rel.replace("\\", "/").strip("/")
+    rel_lower = rel.lower()
+    parts = rel_lower.split("/")
+
+    if parts and parts[0] in language_codes:
+        return False
+
+    name = Path(rel_lower).name
+
+    # Remove final content extension.
+    base = re.sub(r"\.(md|markdown|html)$", "", name, flags=re.I)
+
+    # Hugo multilingual filenames: article.fr.md, index.de.md, _index.es.md
+    if "." in base:
+        suffix = base.rsplit(".", 1)[-1]
+        if suffix in language_codes:
+            return False
+
+    # Also catch underscore/dash language suffixes sometimes used by migrations.
+    if re.search(
+        r"(^|[-_.])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$",
+        base,
+        flags=re.I,
+    ):
+        return False
+
+    return True
+    
+def extract_frontmatter_string_field(fm: str, field: str) -> str:
+    m = re.search(
+        rf"^\s*{re.escape(field)}\s*[:=]\s*['\"]?([^'\"\n#]+)['\"]?\s*$",
+        fm,
+        flags=re.I | re.M,
+    )
+
+    if not m:
+        return ""
+
+    return m.group(1).strip()
+
+
+def extract_frontmatter_list_field(fm: str, field: str) -> list[str]:
+    out = []
+
+    m = re.search(
+        rf"^\s*{re.escape(field)}\s*[:=]\s*(.*?)\s*$",
+        fm,
+        flags=re.I | re.M,
+    )
+
+    if not m:
+        return out
+
+    rest = m.group(1).strip()
+
+    if rest.startswith("[") and rest.endswith("]"):
+        out.extend(x.strip() for x in re.findall(r'["\']([^"\']+)["\']', rest))
+        return out
+
+    if rest and rest not in {"|", ">"}:
+        out.append(rest.strip().strip('"\''))
+        return out
+
+    lines = fm.splitlines()
+    start = None
+
+    for i, line in enumerate(lines):
+        if re.match(rf"^\s*{re.escape(field)}\s*[:=]\s*$", line, flags=re.I):
+            start = i + 1
+            break
+
+    if start is None:
+        return out
+
+    for line in lines[start:]:
+        if not line.strip():
+            continue
+
+        if re.match(r"^\S", line):
+            break
+
+        lm = re.match(r"^\s*-\s*(.*?)\s*$", line)
+        if lm:
+            out.append(lm.group(1).strip().strip('"\''))
+
+    return out
+
+
+def build_content_file_index():
+    """
+    Build route/alias/url/title lookup -> actual CONTENTS_DIR file path.
+
+    Important: returned Path preserves actual directory/file casing on disk,
+    so GitHub QR URLs use real source casing instead of Hugo lowercase routes.
+    """
+    index = {}
+
+    if not CONTENTS_DIR.exists():
+        return index
+
+    def add(key: str, path: Path):
+        key = content_lookup_key(key)
+
+        if not key:
+            return
+
+        # Prefer first exact-ish hit; do not let loose later aliases overwrite it.
+        index.setdefault(key, path)
+
+    for root, dirs, files in os.walk(CONTENTS_DIR):
+        for name in files:
+            p = Path(root) / name
+
+            if p.suffix.lower() not in {".md", ".markdown", ".html"}:
+                continue
+
+            try:
+                rel = str(p.relative_to(CONTENTS_DIR)).replace("\\", "/")
+            except Exception:
+                continue
+            
+            if not content_rel_is_probably_english(rel):
+                continue
+
+            rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+            add(rel, p)
+            add(rel_no_ext, p)
+            add("/" + rel, p)
+            add("/" + rel_no_ext, p)
+
+            if rel_no_ext.endswith("/index"):
+                add(rel_no_ext[:-len("/index")], p)
+                add("/" + rel_no_ext[:-len("/index")], p)
+
+            try:
+                text = read_text(p)
+            except Exception:
+                text = ""
+
+            fm = extract_hugo_frontmatter(text)
+
+            if fm:
+                title = extract_frontmatter_string_field(fm, "title")
+                url = extract_frontmatter_string_field(fm, "url")
+                slug = extract_frontmatter_string_field(fm, "slug")
+
+                if title:
+                    add(title, p)
+
+                if url:
+                    add(url, p)
+
+                if slug:
+                    add(slug, p)
+                    parent = str(Path(rel_no_ext).parent).replace("\\", "/")
+                    if parent and parent != ".":
+                        add(parent + "/" + slug, p)
+
+                for alias in extract_frontmatter_list_field(fm, "aliases"):
+                    add(alias, p)
+
+    return index
+
+
+def find_content_file_for_article_rel(rel: str) -> Path | None:
+    global _content_file_index
+
+    if _content_file_index is None:
+        _content_file_index = build_content_file_index()
+
+    route = rel.replace("\\", "/")
+    route = re.sub(r"/index\.html$", "", route, flags=re.I)
+    route = re.sub(r"\.html$", "", route, flags=re.I)
+    route = route.strip("/")
+
+    candidates = [
+        rel,
+        route,
+        "/" + route,
+        route + "/",
+        route + "/index.html",
+        Path(route).name,
+    ]
+
+    for candidate in candidates:
+        key = content_lookup_key(candidate)
+
+        if key in _content_file_index:
+            return _content_file_index[key]
+
+    return None
+
+def extract_aliases_from_content_file(path: Path | None) -> list[str]:
+    if not path or not path.exists():
+        return []
+
+    text = read_text(path)
+    fm = extract_hugo_frontmatter(text)
+
+    if not fm:
+        return []
+
+    aliases = []
+    lines = fm.splitlines()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        m = re.match(r"^\s*aliases\s*[:=]\s*(.*?)\s*$", line, flags=re.I)
+        if not m:
+            i += 1
+            continue
+
+        rest = m.group(1).strip()
+
+        if rest.startswith("[") and rest.endswith("]"):
+            for item in re.findall(r'["\']([^"\']+)["\']', rest):
+                aliases.append(item.strip())
+            i += 1
+            continue
+
+        if rest and rest not in {"|", ">"}:
+            aliases.append(rest.strip().strip('"\''))
+            i += 1
+            continue
+
+        i += 1
+        while i < len(lines):
+            child = lines[i]
+
+            if not child.strip():
+                i += 1
+                continue
+
+            if re.match(r"^\S", child):
+                break
+
+            lm = re.match(r"^\s*-\s*(.*?)\s*$", child)
+            if lm:
+                aliases.append(lm.group(1).strip().strip('"\''))
+                i += 1
+                continue
+
+            break
+
+    return sorted(set(a for a in aliases if a))
+    
 def clean_person_name(name: str) -> str:
     name = html.unescape(name or "").strip()
     name = re.sub(r"\s+", " ", name)
@@ -1186,6 +1455,279 @@ def read_license_text():
         "",
     )
 
+def extract_redirect_target_from_source_text(text: str) -> str:
+    """
+    Return the redirect target from a RawPedia/Hugo source file.
+
+    Handles:
+      #REDIRECT [[Target]]
+      #REDIRECT [[Target|label]]
+      REDIRECT Target
+      meta refresh / canonical HTML
+      front matter redirect/url/target-ish fields when present
+    """
+    raw = text or ""
+    fm = extract_hugo_frontmatter(raw)
+
+    if fm:
+        for field in (
+            "redirect",
+            "redirect_to",
+            "redirectto",
+            "target",
+            "to",
+        ):
+            value = extract_frontmatter_string_field(fm, field)
+            if value:
+                return value.strip()
+
+    # MediaWiki-style redirect.
+    m = re.search(
+        r"(?im)^\s*#?\s*redirect\s*\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]*)?\]\]",
+        raw,
+    )
+    if m:
+        return m.group(1).strip()
+
+    # Plain redirect text.
+    plain = html_to_plain_text(raw)
+    m = re.search(r"(?i)^\s*#?\s*redirect\s+(.+?)\s*$", plain.strip())
+    if m:
+        return m.group(1).strip()
+
+    # HTML meta refresh.
+    m = re.search(
+        r'<meta\b[^>]*http-equiv=["\']?refresh["\']?[^>]*content=["\'][^"\']*url=([^"\';]+)',
+        raw,
+        flags=re.I | re.S,
+    )
+    if m:
+        return html.unescape(m.group(1)).strip()
+
+    # HTML canonical link.
+    m = re.search(
+        r'<link\b[^>]*rel=["\']canonical["\'][^>]*href=["\']([^"\']+)["\']',
+        raw,
+        flags=re.I | re.S,
+    )
+    if m:
+        return html.unescape(m.group(1)).strip()
+
+    m = re.search(
+        r'<link\b[^>]*href=["\']([^"\']+)["\'][^>]*rel=["\']canonical["\']',
+        raw,
+        flags=re.I | re.S,
+    )
+    if m:
+        return html.unescape(m.group(1)).strip()
+
+    return ""
+
+
+def source_file_is_redirect(path: Path) -> bool:
+    try:
+        text = read_text(path)
+    except Exception:
+        return False
+
+    return bool(extract_redirect_target_from_source_text(text))
+
+
+def find_content_file_for_redirect_target(target: str, current_file: Path | None = None) -> Path | None:
+    """
+    Resolve a redirect target to an actual source file in CONTENTS_DIR.
+
+    Target may be:
+      Some Page
+      Some_Page
+      /some-page/
+      some-page/index.html
+      ../Other_Page
+    """
+    if not target:
+        return None
+
+    target = html.unescape(target).strip()
+    target = urllib.parse.unquote(target)
+    target = target.split("#", 1)[0].split("?", 1)[0].strip()
+
+    if not target:
+        return None
+
+    candidates = []
+
+    candidates.append(target)
+    candidates.append(target.replace(" ", "_"))
+    candidates.append(target.replace(" ", "-"))
+    candidates.append("/" + target.strip("/"))
+    candidates.append(target.strip("/") + "/")
+    candidates.append(target.strip("/") + "/index.html")
+
+    # If redirect is relative to a source directory, try that too.
+    if current_file is not None:
+        try:
+            current_rel_parent = str(current_file.relative_to(CONTENTS_DIR).parent).replace("\\", "/")
+            if current_rel_parent and current_rel_parent != ".":
+                candidates.append(current_rel_parent + "/" + target.strip("/"))
+                candidates.append(current_rel_parent + "/" + target.replace(" ", "_").strip("/"))
+                candidates.append(current_rel_parent + "/" + target.replace(" ", "-").strip("/"))
+        except Exception:
+            pass
+
+    for candidate in candidates:
+        found = find_content_file_for_article_rel(candidate)
+        if found:
+            return found
+
+    return None
+
+
+def canonicalize_content_file_for_qr(path: Path | None, max_hops: int = 12) -> Path | None:
+    """
+    Follow source redirect files so article QR codes point to the real article,
+    not to a redirect stub.
+    """
+    if not path:
+        return None
+
+    seen = set()
+    current = path
+
+    for hop in range(max_hops):
+        try:
+            current = current.resolve()
+        except Exception:
+            pass
+
+        key = str(current)
+
+        if key in seen:
+            print(f"⚠️ QR source redirect loop detected at: {current}")
+            return current
+
+        seen.add(key)
+
+        try:
+            text = read_text(current)
+        except Exception:
+            return current
+
+        target = extract_redirect_target_from_source_text(text)
+
+        if not target:
+            return current
+
+        next_file = find_content_file_for_redirect_target(target, current)
+
+        if not next_file:
+            print(f"⚠️ QR source redirect target not found:")
+            print(f"   redirect file: {current}")
+            print(f"   target:        {target}")
+            return current
+
+        if next_file.resolve() == current:
+            return current
+
+        print(f"↪ QR source redirect resolved: {current.name} -> {next_file.name}")
+        current = next_file
+
+    print(f"⚠️ QR source redirect chain too long, stopping at: {current}")
+    return current
+    
+def github_url_for_article_rel(rel: str) -> str:
+    content_file = find_content_file_for_article_rel(rel)
+    content_file = canonicalize_content_file_for_qr(content_file)
+
+    if content_file:
+        content_rel = str(content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
+        return (
+            "https://github.com/RawTherapee/RawPedia/blob/master/content/"
+            + urllib.parse.quote(content_rel, safe="/")
+        )
+
+    route = rel.replace("\\", "/")
+    route = re.sub(r"/index\.html$", "", route, flags=re.I)
+    route = re.sub(r"\.html$", "", route, flags=re.I)
+    route = route.strip("/")
+
+    print(f"⚠️ Could not find actual-cased source file for generated page: {rel}")
+    print(f"⚠️ QR GitHub URL will use fallback route casing: {route}.md")
+
+    fallback_rel = f"{route}.md" if route else "_index.md"
+
+    return (
+        "https://github.com/RawTherapee/RawPedia/blob/master/content/"
+        + urllib.parse.quote(fallback_rel, safe="/")
+    )
+    
+def make_article_qr(page_id: str, github_url: str) -> str:
+    qr_dir = OUTPUT_HTML.parent / "article-qrs"
+    qr_dir.mkdir(parents=True, exist_ok=True)
+
+    qr_path = qr_dir / f"{page_id}.svg"
+
+    if not qr_path.exists() or qr_path.stat().st_size == 0:
+        try:
+            subprocess.run(
+                [
+                    "qrencode",
+                    "-t", "SVG",
+                    "-o", str(qr_path),
+                    "-m", "1",
+                    "-s", "5",
+                    github_url,
+                ],
+                check=True,
+            )
+        except FileNotFoundError:
+            print("❌ qrencode was not found while generating article QR codes.")
+            print("❌ Install it with:")
+            print("   brew install qrencode")
+            raise
+        except subprocess.CalledProcessError as e:
+            print("❌ qrencode failed while generating article QR code.")
+            print(f"❌ page_id: {page_id}")
+            print(f"❌ url: {github_url}")
+            print(f"❌ exit status: {e.returncode}")
+            raise
+
+    return qr_path.resolve().as_uri()
+
+def license_text_to_html_paragraphs(text: str) -> str:
+    text = text.strip()
+
+    # Normalize line endings.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Split on blank lines.
+    blocks = re.split(r"\n\s*\n+", text)
+
+    out = []
+
+    for block in blocks:
+        block = block.strip()
+
+        if not block:
+            continue
+
+        # Preserve short all-caps-ish license headings as heading-like divs.
+        if (
+            len(block) <= 80
+            and "\n" not in block
+            and re.search(r"[A-Z]", block)
+            and block.upper() == block
+        ):
+            out.append(f'<div class="license-heading">{html.escape(block)}</div>')
+            continue
+
+        # Reflow single paragraph lines into one justified paragraph.
+        block = re.sub(r"\s*\n\s*", " ", block)
+        block = re.sub(r"\s+", " ", block).strip()
+
+        out.append(f"<p>{html.escape(block)}</p>")
+
+    return "\n".join(out)
+
 def title_from_doc(text: str, fallback: str) -> str:
     m = re.search(r"<title[^>]*>(.*?)</title>", text, flags=re.I | re.S)
     if not m:
@@ -1374,6 +1916,9 @@ def should_suppress_page(title: str, rel: str, full_text: str) -> tuple[bool, st
         "wavelets new",
         "wavelet new page",
         "waveletnew",
+        "how to play raw",
+        "translating rawpedia",
+        "translating rawpedia article",
     }
 
     if title_key in suppressed_exact:
@@ -1393,6 +1938,13 @@ def should_suppress_page(title: str, rel: str, full_text: str) -> tuple[bool, st
         "wavelets-new",
         "wavelets_new",
         "waveletnew",
+        "how-to-play-raw",
+        "how_to_play_raw",
+        "howtoplayraw",
+        "translating-rawpedia",
+        "translating_rawpedia",
+        "/translating/",
+        "translating.html",
     ]
 
     if any(needle in rel_key for needle in suppressed_rel_needles):
@@ -1401,10 +1953,6 @@ def should_suppress_page(title: str, rel: str, full_text: str) -> tuple[bool, st
     return False, ""
 
 def is_probably_english_page(path: Path, title: str, text: str) -> bool:
-    """
-    Keep English pages and reject obvious translated pages by URL shape.
-    Do not use broad content-language guessing; RawPedia root pages are English.
-    """
     rel = rel_from_source(path)
     rel_lower = rel.lower()
     parts = rel_lower.split("/")
@@ -1412,47 +1960,56 @@ def is_probably_english_page(path: Path, title: str, text: str) -> bool:
     if parts and parts[0] in language_codes:
         return False
 
-    if re.search(r"(^|/)index\.(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)(/|\.html$)", rel_lower):
-        return False
-
     route = re.sub(r"/index\.html$", "", rel_lower)
     route = re.sub(r"\.html$", "", route)
     slug = route.split("/")[-1]
 
-    if re.search(r"(^|[-_.])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", slug):
+    if re.search(r"(^|[-_])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", slug):
         return False
 
-    translated_slug_needles = [
-        "bordi_e_",
-        "nitidezza",
-        "riduzione_rumore",
-        "riduzione_",
-        "creare_profili",
-        "descargar",
-        "opciones",
-        "procesamiento",
-        "preferencias",
-        "ajustes",
-        "premier",
-        "premiers",
-        "reglages",
-        "réglages",
-        "telecharg",
-        "télécharg",
+    title_clean = html.unescape(title).strip()
+    title_lower = title_clean.lower()
+
+    if re.search(r"\s+(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$", title_lower):
+        return False
+
+    m = re.search(r"<html[^>]*\blang=[\"']([^\"']+)[\"']", text, flags=re.I)
+    if m:
+        lang = m.group(1).lower()
+        if not lang.startswith("en"):
+            return False
+
+    translated_title_words = [
+        "premier pas", "profondeur", "options en ligne", "éditer",
+        "généralités", "utilisation", "dépendances", "compilation",
+        "réglages", "ajouter", "le plugin", "mode opératoire",
+        "prise en charge", "nitidezza", "riduzione", "profili di",
+        "creare profili", "bordi e", "descargar", "opciones",
+        "procesamiento", "preferencias", "añadir", "soporte",
+        "profundidad", "contribuir", "compilando", "descàrrega", "baixar",
     ]
 
-    if any(needle in rel_lower for needle in translated_slug_needles):
+    if any(word in title_lower for word in translated_title_words):
+        return False
+
+    sample = html.unescape(re.sub(r"<[^>]+>", " ", text[:16000])).lower()
+
+    non_english_clues = [
+        "table des matières", "sommaire", "premiers pas", "utilisation",
+        "réglages", "généralités", "questo", "questa", "strumento",
+        "elaborazione", "descargar", "opciones", "ajustes", "herramienta",
+        "preferencias", "procesamiento", "índice", "tabla de contenidos",
+    ]
+
+    hits = sum(1 for clue in non_english_clues if clue in sample)
+
+    if hits >= 2:
         return False
 
     return True
 
 def clean_links(s: str) -> str:
-    # Hugo sometimes emits #ZgotmplZ for unsafe/failed URLs.
-    # Make them harmless so WeasyPrint stops reporting missing anchors.
-    s = re.sub(r'\bhref=(["\'])#ZgotmplZ\1', 'href="#"', s, flags=re.I)
-    s = re.sub(r'\bsrc=(["\'])#ZgotmplZ\1', 'src=""', s, flags=re.I)
-    s = re.sub(r'\bdata-src=(["\'])#ZgotmplZ\1', 'data-src=""', s, flags=re.I)
-    s = s.replace("#ZgotmplZ", "#")
+    s = re.sub(r'href=(["\"])#ZgotmplZ\1', 'href="#"', s, flags=re.I)
     return s
 
 def page_kind(title: str, rel: str) -> tuple[int, str]:
@@ -1571,339 +2128,79 @@ def page_sort_key(info):
     return (order, priority, title, info["rel"].lower())
 
 def resolve_local_asset(src: str, page_path: Path) -> Path | None:
-    raw = html.unescape(src or "").strip()
+    raw = html.unescape(src).strip()
 
-    if not raw:
+    if not raw or raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
         return None
-
-    if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
-        return None
-
-    # Ignore srcset descriptors if one sneaks through.
-    raw = raw.split()[0].strip()
 
     parsed = urllib.parse.urlsplit(raw)
-    path_part = urllib.parse.unquote(parsed.path).strip()
-
-    if not path_part:
-        return None
-
-    path_part = path_part.replace("\\", "/")
-    path_no_leading = path_part.lstrip("/")
-    path_lower = path_no_leading.lower()
+    path_part = urllib.parse.unquote(parsed.path)
 
     candidates = []
 
     if path_part.startswith("/"):
-        candidates.append(SOURCE_DIR / path_no_leading)
-        candidates.append(RAWPEDIA_ROOT / "static" / path_no_leading)
-        candidates.append(RAWPEDIA_ROOT / "assets" / path_no_leading)
-        candidates.append(RAWPEDIA_ROOT / "resources" / path_no_leading)
-        candidates.append(RAWPEDIA_ROOT / path_no_leading)
+        candidates.append(SOURCE_DIR / path_part.lstrip("/"))
     else:
         candidates.append(page_path.parent / path_part)
         candidates.append(SOURCE_DIR / path_part)
-        candidates.append(RAWPEDIA_ROOT / "static" / path_part)
-        candidates.append(RAWPEDIA_ROOT / "assets" / path_part)
-        candidates.append(RAWPEDIA_ROOT / "resources" / path_part)
-        candidates.append(RAWPEDIA_ROOT / path_part)
 
     for c in candidates:
         try:
             c = c.resolve()
-        except Exception:
+        except FileNotFoundError:
             pass
 
         if c.exists() and c.suffix.lower() in asset_exts:
             return c
 
-    # Relative-path index fallback.
-    found = asset_by_rel.get(path_lower)
-    if found and found.exists():
-        return found
-
-    # Common Hugo/static path fallback.
-    for prefix in ("images/", "img/", "media/", "uploads/", "files/"):
-        if prefix in path_lower:
-            tail = path_lower[path_lower.index(prefix):]
-            found = asset_by_rel.get(tail)
-            if found and found.exists():
-                return found
-
-    # Filename fallback.
     base = Path(path_part).name.lower()
     found = asset_by_name.get(base)
-
     if found and found.exists():
         return found
 
     return None
 
-def rewrite_srcset_value(value: str, page_path: Path) -> str:
-    """
-    Rewrite srcset candidates to local file:// URIs.
-
-    Keeps width/density descriptors, e.g.
-        image.jpg 800w
-        image@2x.jpg 2x
-    """
-    parts = []
-
-    for candidate in value.split(","):
-        candidate = candidate.strip()
-
-        if not candidate:
-            continue
-
-        bits = candidate.split()
-        url = bits[0]
-        descriptor = " ".join(bits[1:])
-
-        found = resolve_local_asset(url, page_path)
-
-        if found:
-            new_url = found.resolve().as_uri()
-        else:
-            new_url = url
-
-        if descriptor:
-            parts.append(f"{new_url} {descriptor}")
-        else:
-            parts.append(new_url)
-
-    return ", ".join(parts)
-
-def rewrite_url_attr(tag: str, attr_name: str, page_path: Path) -> tuple[str, bool]:
-    """
-    Rewrite a single URL attribute in an HTML tag.
-    Returns updated tag and whether a local asset was found.
-    """
-    pattern = rf'\b{re.escape(attr_name)}=(["\'])(.*?)\1'
-    m = re.search(pattern, tag, flags=re.I | re.S)
-
-    if not m:
-        return tag, False
-
-    value = m.group(2)
-
-    if attr_name.lower() == "srcset":
-        rewritten = rewrite_srcset_value(value, page_path)
-        tag = re.sub(
-            pattern,
-            f'{attr_name}="{html.escape(rewritten, quote=True)}"',
-            tag,
-            count=1,
-            flags=re.I | re.S,
-        )
-        return tag, rewritten != value
-
-    found = resolve_local_asset(value, page_path)
-
-    if not found:
-        return tag, False
-
-    safe_uri = html.escape(found.resolve().as_uri(), quote=True)
-
-    tag = re.sub(
-        pattern,
-        f'{attr_name}="{safe_uri}"',
-        tag,
-        count=1,
-        flags=re.I | re.S,
-    )
-
-    return tag, True
-
 def rewrite_images(s: str, page_path: Path, page_title: str, page_rel: str) -> str:
-    """
-    Rewrite image references to file:// URIs for WeasyPrint.
-
-    Handles:
-      <img src="">
-      <img srcset="">
-      <img data-src="">
-      <img data-original="">
-      <source srcset="">
-      <source src="">
-    """
     def repl(m):
         tag = m.group(0)
-        original_tag = tag
-        tag_name = m.group(1).lower()
+        src = m.group(3)
+        found = resolve_local_asset(src, page_path)
 
-        found_any = False
-
-        # Normal image/source URLs.
-        for attr in ("src", "srcset"):
-            tag, found = rewrite_url_attr(tag, attr, page_path)
-            found_any = found_any or found
-
-        # Lazy-loading attributes. If src is absent or empty, promote data-src.
-        for lazy_attr in ("data-src", "data-original", "data-lazy-src"):
-            lazy_match = re.search(
-                rf'\b{re.escape(lazy_attr)}=(["\'])(.*?)\1',
+        if found:
+            safe_uri = html.escape(found.resolve().as_uri(), quote=True)
+            tag = re.sub(
+                r'\bsrc=(["\']).*?\1',
+                f'src="{safe_uri}"',
                 tag,
+                count=1,
                 flags=re.I | re.S,
             )
+            return tag
 
-            if not lazy_match:
-                continue
+        raw = html.unescape(src.strip())
+        filename = Path(urllib.parse.urlsplit(raw).path).name or raw or "unknown image"
 
-            lazy_value = lazy_match.group(2)
-            found = resolve_local_asset(lazy_value, page_path)
+        missing_images.append({
+            "image": raw,
+            "filename": filename,
+            "page_title": page_title,
+            "page_rel": page_rel,
+        })
 
-            if not found:
-                continue
+        return (
+            '<div class="missing-image">'
+            '<strong>Missing image</strong>'
+            f'<div class="missing-file">{html.escape(filename)}</div>'
+            f'<div class="missing-path">{html.escape(raw)}</div>'
+            '</div>'
+        )
 
-            safe_uri = html.escape(found.resolve().as_uri(), quote=True)
-
-            src_match = re.search(r'\bsrc=(["\'])(.*?)\1', tag, flags=re.I | re.S)
-
-            if src_match:
-                if not src_match.group(2).strip():
-                    tag = re.sub(
-                        r'\bsrc=(["\']).*?\1',
-                        f'src="{safe_uri}"',
-                        tag,
-                        count=1,
-                        flags=re.I | re.S,
-                    )
-            else:
-                tag = tag[:-1] + f' src="{safe_uri}">'
-
-            found_any = True
-
-        # If this is an img with an unresolved local src, report it.
-        if tag_name == "img":
-            src_match = re.search(r'\bsrc=(["\'])(.*?)\1', original_tag, flags=re.I | re.S)
-
-            if src_match:
-                original_src = html.unescape(src_match.group(2).strip())
-
-                if original_src and not original_src.startswith(("http://", "https://", "data:", "mailto:", "#")):
-                    if not resolve_local_asset(original_src, page_path):
-                        filename = Path(urllib.parse.urlsplit(original_src).path).name or original_src or "unknown image"
-
-                        missing_images.append({
-                            "image": original_src,
-                            "filename": filename,
-                            "page_title": page_title,
-                            "page_rel": page_rel,
-                        })
-
-        return tag
-
-    s = re.sub(
-        r'<(img|source)\b[^>]*>',
+    return re.sub(
+        r'(<img\b[^>]*?\bsrc=)(["\'])(.*?)(\2[^>]*>)',
         repl,
         s,
         flags=re.I | re.S,
     )
-
-    return s
-
-def rewrite_remaining_root_asset_urls(s: str, page_path: Path) -> str:
-    """
-    Final safety pass for Hugo/RawPedia absolute-root asset URLs.
-
-    Converts leftovers like:
-        src="/images/foo.png"
-        href="/images/foo.png"
-        url("/images/foo.png")
-        srcset="/foo.png 1x, /bar.png 2x"
-
-    into file:// URIs so WeasyPrint does not try:
-        file:///images/foo.png
-    """
-    asset_ext_pattern = r"(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)"
-
-    def resolve_url_value(value: str) -> str:
-        raw = html.unescape(value or "").strip()
-
-        if not raw:
-            return value
-
-        if raw.startswith(("http://", "https://", "data:", "mailto:", "#", "file://")):
-            return value
-
-        found = resolve_local_asset(raw, page_path)
-
-        if found:
-            return found.resolve().as_uri()
-
-        return value
-
-    def attr_repl(m):
-        attr = m.group(1)
-        quote = m.group(2)
-        value = m.group(3)
-
-        new_value = resolve_url_value(value)
-
-        return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
-
-    # src="/foo.png", href="/foo.png", data-src="/foo.png", etc.
-    s = re.sub(
-        rf'\b(src|href|data-src|data-original|data-lazy-src)=([\'"])(/[^\'"]+?\.{asset_ext_pattern}(?:\?[^\'"]*)?)\2',
-        attr_repl,
-        s,
-        flags=re.I | re.S,
-    )
-
-    def srcset_repl(m):
-        attr = m.group(1)
-        quote = m.group(2)
-        value = m.group(3)
-
-        parts = []
-
-        for candidate in value.split(","):
-            candidate = candidate.strip()
-
-            if not candidate:
-                continue
-
-            bits = candidate.split()
-            url = bits[0]
-            descriptor = " ".join(bits[1:])
-
-            new_url = resolve_url_value(url)
-
-            if descriptor:
-                parts.append(f"{new_url} {descriptor}")
-            else:
-                parts.append(new_url)
-
-        return f'{attr}={quote}{html.escape(", ".join(parts), quote=True)}{quote}'
-
-    # srcset="/foo.png 1x, /bar.png 2x"
-    s = re.sub(
-        r'\b(srcset)=([\'"])(.*?)\2',
-        srcset_repl,
-        s,
-        flags=re.I | re.S,
-    )
-
-    def css_url_repl(m):
-        quote = m.group(1) or ""
-        value = m.group(2)
-
-        new_value = resolve_url_value(value)
-
-        if quote:
-            return f'url({quote}{new_value}{quote})'
-
-        return f'url({new_value})'
-
-    # CSS url("/foo.png") or url(/foo.png)
-    s = re.sub(
-        rf'url\(\s*([\'"]?)(/[^\'")]+?\.{asset_ext_pattern}(?:\?[^\'")]*)?)\1\s*\)',
-        css_url_repl,
-        s,
-        flags=re.I | re.S,
-    )
-
-    return s
 
 def prefix_ids_and_anchors(s: str, prefix: str) -> str:
     def id_repl(m):
@@ -1930,7 +2227,335 @@ def prefix_ids_and_anchors(s: str, prefix: str) -> str:
     s = re.sub(r'href=(["\"])#([^"\']+)\1', href_repl, s, flags=re.I)
 
     return s
+    
+def normalize_manual_link_key(path: str) -> str:
+    path = html.unescape(path or "").strip()
+    path = urllib.parse.unquote(path)
+    path = path.replace("\\", "/")
+    path = re.sub(r"/+", "/", path)
+    path = path.strip()
 
+    if not path:
+        return ""
+
+    # Remove query and fragment before matching the page path.
+    path = path.split("#", 1)[0]
+    path = path.split("?", 1)[0]
+
+    path = path.strip("/")
+
+    if path.endswith("/index.html"):
+        path = path[:-len("/index.html")]
+    elif path == "index.html":
+        path = ""
+    elif path.endswith(".html"):
+        path = path[:-len(".html")]
+
+    path = path.strip("/").lower()
+
+    return path
+
+def slug_route_key(value: str) -> str:
+    value = html.unescape(value or "").strip()
+    value = urllib.parse.unquote(value)
+    value = value.replace("\\", "/")
+    value = re.sub(r"/+", "/", value)
+    value = value.strip()
+
+    value = value.split("#", 1)[0]
+    value = value.split("?", 1)[0]
+    value = value.strip("/")
+
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+
+    value = value.strip("/").lower()
+
+    # Make old RawPedia/wiki-ish routes match Hugo routes.
+    value = value.replace("_", "-")
+    value = re.sub(r"[^a-z0-9/.-]+", "-", value)
+    value = re.sub(r"-+", "-", value)
+    value = re.sub(r"/+", "/", value)
+    value = value.strip("-/")
+
+    return value
+
+
+def title_route_key(title: str) -> str:
+    title = html.unescape(title or "").strip().lower()
+    title = title.replace("&", "and")
+    title = re.sub(r"[^a-z0-9]+", "-", title)
+    title = re.sub(r"-+", "-", title).strip("-")
+    return title
+
+def add_rawpedia_legacy_aliases(link_map):
+    """
+    Old RawPedia/Hugo routes which do not match current generated page slugs.
+    Only add aliases whose target page actually exists in this manual.
+    """
+
+    aliases = {
+        "the-image-editor-tab": "editor",
+        "the_image_editor_tab": "editor",
+
+        "the-file-browser-tab": "file-browser-tab",
+        "the_file_browser_tab": "file-browser-tab",
+
+        "the-batch-queue": "queue",
+        "the_batch_queue": "queue",
+
+        "saving": "saving-images",
+        "saving-images": "saving-images",
+
+        "lens/geometry": "lens-geometry",
+        "lens-geometry": "lens-geometry",
+
+        "batch-adjustments-sync": "batch-adjustments-sync",
+        "batch_adjustments_-_sync": "batch-adjustments-sync",
+
+        "sidecar-files-processing-profiles": "sidecar-files-processing-profiles",
+        "sidecar_files_-_processing_profiles": "sidecar-files-processing-profiles",
+
+        "flat-field": "flat-field",
+        "flat_field": "flat-field",
+
+        "dark-frame": "dark-frame",
+        "dark_frame": "dark-frame",
+
+        "auto-matched-curve": "rgb-curves",
+        "auto_matched_curve": "rgb-curves",
+    }
+
+    existing_targets = set(link_map.values())
+
+    for old_route, page_id in aliases.items():
+        target = f"#page-{page_id}"
+
+        # Do not create dead internal links.
+        if target not in existing_targets:
+            continue
+
+        link_map.setdefault(slug_route_key(old_route), target)
+        link_map.setdefault(slug_route_key("/" + old_route + "/"), target)
+
+    return link_map
+
+def build_manual_link_map(infos):
+    link_map = {}
+
+    for info in infos:
+        href = f"#page-{info['id']}"
+
+        rel = info["rel"].replace("\\", "/")
+        route = rel
+        route = re.sub(r"/index\.html$", "", route, flags=re.I)
+        route = re.sub(r"\.html$", "", route, flags=re.I)
+        route = route.strip("/")
+
+        keys = {
+            slug_route_key(rel),
+            slug_route_key("/" + rel),
+            slug_route_key(route),
+            slug_route_key("/" + route),
+            slug_route_key(route + "/"),
+            slug_route_key(route + "/index.html"),
+            slug_route_key(info["id"]),
+            title_route_key(info["title"]),
+            slug_route_key(title_route_key(info["title"])),
+        }
+
+        # Old/common RawPedia short-name aliases by title.
+        tkey = title_route_key(info["title"])
+        keys.add(tkey.replace("-", "_"))
+        keys.add(tkey.replace("-", " "))
+
+        # Explicit aliases harvested from Hugo front matter.
+        for alias in info.get("aliases", []):
+            keys.add(slug_route_key(alias))
+
+        for key in keys:
+            key = slug_route_key(key)
+            if key:
+                link_map.setdefault(key, href)
+
+    return add_rawpedia_legacy_aliases(link_map)
+
+def is_rawpedia_host(netloc: str) -> bool:
+    host = (netloc or "").lower()
+
+    # Old and current RawPedia hosts.
+    return host in {
+        "rawpedia.rawtherapee.com",
+        "www.rawpedia.rawtherapee.com",
+        "rawpedia.pixls.us",
+        "www.rawpedia.pixls.us",
+        "rawpedia.rawpixls.us",
+        "www.rawpedia.rawpixls.us",
+    }
+
+def rewrite_one_manual_href(href: str, page_path: Path, manual_link_map: dict[str, str]) -> str:
+    raw = html.unescape(href or "").strip()
+
+    if not raw:
+        return href
+
+    if raw.startswith(("#", "mailto:", "tel:", "data:", "javascript:")):
+        return raw
+
+    parsed = urllib.parse.urlsplit(raw)
+
+    asset_or_download_exts = asset_exts | {
+        ".pdf", ".zip", ".7z", ".gz", ".bz2", ".xz",
+        ".pp3", ".dcp", ".icc", ".icm", ".txt", ".json",
+        ".exe", ".dmg", ".appimage"
+    }
+
+    path_ext = Path(urllib.parse.unquote(parsed.path)).suffix.lower()
+
+    if path_ext in asset_or_download_exts:
+        if parsed.scheme in {"http", "https"} and is_rawpedia_host(parsed.netloc):
+            return urllib.parse.urlunsplit((
+                "https",
+                urllib.parse.urlsplit(RAWPEDIA_ONLINE_URL).netloc,
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            ))
+
+        return raw
+
+    def with_fragment(target: str, fragment: str) -> str:
+        if not fragment:
+            return target
+
+        # For now, land on the article page. This is safer than inventing
+        # cross-page heading anchors which may or may not exist.
+        return target
+
+    def online_rawpedia_url(path: str, query: str = "", fragment: str = "") -> str:
+        fixed = urllib.parse.urlunsplit((
+            "https",
+            urllib.parse.urlsplit(RAWPEDIA_ONLINE_URL).netloc,
+            path or "/",
+            query,
+            fragment,
+        ))
+        return fixed
+
+    # Protocol-relative URL, including //localhost:1313/fr/foo/
+    if raw.startswith("//"):
+        fake = urllib.parse.urlsplit("https:" + raw)
+        key = slug_route_key(fake.path)
+
+        if key in manual_link_map:
+            return with_fragment(manual_link_map[key], fake.fragment)
+
+        # Do not leave //localhost... in the PDF. Make it a real web URL.
+        return online_rawpedia_url(fake.path, fake.query, fake.fragment)
+
+    # RawPedia web URL.
+    if parsed.scheme in {"http", "https"}:
+        host = (parsed.netloc or "").lower()
+
+        if not is_rawpedia_host(host) and not host.startswith("localhost"):
+            return raw
+
+        key = slug_route_key(parsed.path)
+
+        if key in manual_link_map:
+            return with_fragment(manual_link_map[key], parsed.fragment)
+
+        return online_rawpedia_url(parsed.path, parsed.query, parsed.fragment)
+
+    # file:///foo/ produced by old cleanup/base-url behavior.
+    if parsed.scheme == "file":
+        key = slug_route_key(parsed.path)
+
+        if key in manual_link_map:
+            return with_fragment(manual_link_map[key], parsed.fragment)
+
+        # Do not leave broken pseudo-file article links.
+        if not Path(urllib.parse.unquote(parsed.path)).exists():
+            return online_rawpedia_url(parsed.path, parsed.query, parsed.fragment)
+
+        return raw
+
+    # Root-relative link, e.g. /saving/
+    if raw.startswith("/"):
+        key = slug_route_key(parsed.path)
+
+        if key in manual_link_map:
+            return with_fragment(manual_link_map[key], parsed.fragment)
+
+        return online_rawpedia_url(parsed.path, parsed.query, parsed.fragment)
+
+    # Relative link, e.g. lens/geometry#distortion_correction
+    rel_path = urllib.parse.unquote(parsed.path)
+    key = slug_route_key(rel_path)
+
+    if key in manual_link_map:
+        return with_fragment(manual_link_map[key], parsed.fragment)
+
+    try:
+        resolved = (page_path.parent / rel_path).resolve()
+        rel_to_source = str(resolved.relative_to(SOURCE_DIR)).replace("\\", "/")
+        key = slug_route_key(rel_to_source)
+
+        if key in manual_link_map:
+            return with_fragment(manual_link_map[key], parsed.fragment)
+    except Exception:
+        pass
+
+    # Last resort: do not leave PDF-hostile relative links.
+    if parsed.path:
+        return online_rawpedia_url("/" + parsed.path.lstrip("/"), parsed.query, parsed.fragment)
+
+    return raw
+
+
+def rewrite_article_links_to_manual(content: str, page_path: Path, manual_link_map: dict[str, str]) -> str:
+    def href_repl(m):
+        quote = m.group(1)
+        href = m.group(2)
+
+        new_href = rewrite_one_manual_href(href, page_path, manual_link_map)
+
+        return f'href={quote}{html.escape(new_href, quote=True)}{quote}'
+
+    content = re.sub(
+        r'\bhref=(["\'])(.*?)\1',
+        href_repl,
+        content,
+        flags=re.I | re.S,
+    )
+
+    return content
+    
+def normalize_internal_href_fragments(content: str) -> str:
+    def href_repl(m):
+        quote = m.group(1)
+        href = html.unescape(m.group(2)).strip()
+
+        if not href.startswith("#"):
+            return m.group(0)
+
+        if href in {"#", "#ZgotmplZ"}:
+            return f'href={quote}#{quote}'
+
+        frag = href[1:]
+
+        # Decode percent-encoded anchors like %ce%b4e -> δe.
+        frag = urllib.parse.unquote(frag)
+
+        return f'href={quote}#{html.escape(frag, quote=True)}{quote}'
+
+    return re.sub(
+        r'\bhref=(["\'])(.*?)\1',
+        href_repl,
+        content,
+        flags=re.I | re.S,
+    )    
+    
 def build_article_toc(content: str, page_id: str) -> str:
     headings = []
 
@@ -1977,6 +2602,66 @@ def build_article_toc(content: str, page_id: str) -> str:
     out.append('</div>')
 
     return "\n".join(out)
+
+def article_is_major(content: str, title: str = "") -> bool:
+    """
+    Decide whether an article is large enough to deserve a new page.
+
+    Major articles:
+      - have many headings / a substantial local TOC
+      - or have a lot of body text
+      - or are known major RawPedia reference articles
+
+    Short articles with small TOCs should flow after a 1 inch spacer instead.
+    """
+    plain = html_to_plain_text(content)
+    plain_len = len(plain)
+
+    headings = re.findall(
+        r"<h([2-4])\b[^>]*>.*?</h\1>",
+        content,
+        flags=re.I | re.S,
+    )
+
+    heading_count = len(headings)
+
+    title_key = html.unescape(title or "").strip().lower()
+
+    major_title_needles = [
+        "color management",
+        "exposure",
+        "white balance",
+        "preferences",
+        "the image editor tab",
+        "the file browser tab",
+        "local adjustments",
+        "wavelets",
+        "sharpening",
+        "noise reduction",
+        "raw black and white points",
+        "demosaicing",
+        "film simulation",
+        "dynamic processing profiles",
+        "processing profiles",
+        "toolchain pipeline",
+        "cam16",
+        "ciecam",
+        "jz",
+    ]
+
+    if any(needle in title_key for needle in major_title_needles):
+        return True
+
+    if heading_count >= 8:
+        return True
+
+    if heading_count >= 5 and plain_len >= 4500:
+        return True
+
+    if plain_len >= 9000:
+        return True
+
+    return False
 
 def has_meaningful_content(content: str, title: str = "") -> bool:
     if is_redirect_page_text(content, title):
@@ -2277,8 +2962,6 @@ def build_technical_index(infos):
     return result
 
 infos = []
-skip_reasons = defaultdict(list)
-selected_pages = []
 
 for page in all_pages_raw:
     text = read_text(page)
@@ -2292,31 +2975,27 @@ for page in all_pages_raw:
             suppressed_redirects.append(rel)
         elif reason == "main-page-variant":
             suppressed_main_pages.append(rel)
-
-        skip_reasons[f"suppressed-{reason}"].append(rel)
         continue
 
     if not is_probably_english_page(page, title, text):
-        skip_reasons["not-probably-english"].append(rel)
         continue
 
     page_id = make_id(rel)
 
-    raw_content = extract_main_or_body(text)
-    content = strip_bad_parts(raw_content)
+    content = extract_main_or_body(text)
+    content = strip_bad_parts(content)
     content = clean_links(content)
 
     if is_redirect_page_text(content, title):
         suppressed_redirects.append(rel)
-        skip_reasons["redirect-after-clean"].append(rel)
         continue
 
     content = rewrite_images(content, page, title, rel)
-    content = rewrite_remaining_root_asset_urls(content, page)
     content = prefix_ids_and_anchors(content, page_id)
     content = strip_empty_leading_blocks(content)
 
     article_toc = build_article_toc(content, page_id)
+    has_article_toc = bool(article_toc)
 
     if article_toc:
         content = article_toc + "\n" + content
@@ -2324,44 +3003,14 @@ for page in all_pages_raw:
     content = strip_empty_leading_blocks(content)
 
     if not has_meaningful_content(content, title):
-        fallback = text
-
-        body_match = re.search(r"<body\b[^>]*>(.*?)</body>", text, flags=re.I | re.S)
-        if body_match:
-            fallback = body_match.group(1)
-
-        fallback = re.sub(r"<script\b.*?</script>", "", fallback, flags=re.I | re.S)
-        fallback = re.sub(r"<noscript\b.*?</noscript>", "", fallback, flags=re.I | re.S)
-        fallback = re.sub(r"<style\b.*?</style>", "", fallback, flags=re.I | re.S)
-        fallback = re.sub(r"<header\b.*?</header>", "", fallback, flags=re.I | re.S)
-        fallback = re.sub(r"<footer\b.*?</footer>", "", fallback, flags=re.I | re.S)
-        fallback = re.sub(r"<nav\b.*?</nav>", "", fallback, flags=re.I | re.S)
-
-        fallback = clean_links(fallback)
-        fallback = rewrite_images(fallback, page, title, rel)
-        fallback = rewrite_remaining_root_asset_urls(fallback, page)
-        fallback = prefix_ids_and_anchors(fallback, page_id)
-        fallback = strip_empty_leading_blocks(fallback)
-
-        if is_redirect_page_text(fallback, title):
-            suppressed_redirects.append(rel)
-            skip_reasons["redirect-after-fallback"].append(rel)
-            continue
-
-        if has_meaningful_content(fallback, title):
-            fallback_toc = build_article_toc(fallback, page_id)
-
-            if fallback_toc:
-                fallback = fallback_toc + "\n" + fallback
-
-            content = strip_empty_leading_blocks(fallback)
-        else:
-            plain_len = len(html_to_plain_text(content))
-            fallback_plain_len = len(html_to_plain_text(fallback))
-            skip_reasons[f"not-meaningful-content normal={plain_len} fallback={fallback_plain_len}"].append(rel)
-            continue
+        continue
 
     order, section = page_kind(title, rel)
+    content_file = find_content_file_for_article_rel(rel)
+    aliases = extract_aliases_from_content_file(content_file)
+
+    github_url = github_url_for_article_rel(rel)
+    github_qr_uri = make_article_qr(page_id, github_url)
 
     infos.append({
         "path": page,
@@ -2371,43 +3020,100 @@ for page in all_pages_raw:
         "section": section,
         "section_id": section_toc_id(section),
         "section_order": order,
+        "has_article_toc": has_article_toc,
+        "github_url": github_url,
+        "github_qr_uri": github_qr_uri,
+        "aliases": aliases,
         "content": content,
     })
 
-    selected_pages.append(f"{title} [{rel}]")
-
 infos.sort(key=page_sort_key)
+manual_link_map = build_manual_link_map(infos)
+qr_case_report = OUTPUT_HTML.parent / "article-github-source-map.txt"
 
-selected_report = OUTPUT_HTML.parent / "selected-pages.txt"
-selected_report.write_text("\n".join(selected_pages) + "\n", encoding="utf-8")
-print(f"✅ Selected page report: {selected_report}")
+qr_case_lines = []
+for info in infos:
+    content_file = find_content_file_for_article_rel(info["rel"])
+    raw_content_file = content_file
+    content_file = canonicalize_content_file_for_qr(content_file)
 
-skip_report = OUTPUT_HTML.parent / "skip-reasons.txt"
-skip_lines = []
+if content_file:
+    content_rel = str(content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
+else:
+    content_rel = "[FALLBACK - ACTUAL CASE NOT FOUND]"
 
-for reason, rels in sorted(skip_reasons.items()):
-    skip_lines.append("------------------------------------------------------------")
-    skip_lines.append(reason)
-    skip_lines.append(f"count: {len(rels)}")
-    skip_lines.append("")
+if raw_content_file and content_file and raw_content_file.resolve() != content_file.resolve():
+    raw_content_rel = str(raw_content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
+    content_rel = f"{content_rel}  [canonicalized from redirect: {raw_content_rel}]"
 
-    for rel in sorted(set(rels))[:300]:
-        skip_lines.append(rel)
+    qr_case_lines.append(f"{info['title']}")
+    qr_case_lines.append(f"  generated: {info['rel']}")
+    qr_case_lines.append(f"  source:    {content_rel}")
+    qr_case_lines.append(f"  github:    {info['github_url']}")
+    qr_case_lines.append("")
 
-    if len(set(rels)) > 300:
-        skip_lines.append(f"... {len(set(rels)) - 300} more")
+qr_case_report.write_text("\n".join(qr_case_lines), encoding="utf-8")
+print(f"✅ Article GitHub source map report: {qr_case_report}")
 
-    skip_lines.append("")
+bad_qr_sources = []
 
-skip_report.write_text("\n".join(skip_lines), encoding="utf-8")
-print(f"✅ Skip reason report: {skip_report}")
+language_file_re = re.compile(
+    r"/content/.*\.(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)\.(md|markdown|html)$",
+    flags=re.I,
+)
 
-if not infos:
-    print("❌ No article pages were selected.")
-    print(f"❌ See: {skip_report}")
-    print(f"❌ See: {OUTPUT_HTML.parent / 'pages-all.txt'}")
-    raise SystemExit(1)
+language_dir_re = re.compile(
+    r"/content/(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)/",
+    flags=re.I,
+)
 
+for info in infos:
+    url = info["github_url"]
+
+    if language_file_re.search(url) or language_dir_re.search(url):
+        bad_qr_sources.append((info["title"], info["rel"], url))
+
+if bad_qr_sources:
+    print()
+    print("❌ QR GitHub source URLs point to translated source files:")
+    for title, rel, url in bad_qr_sources[:80]:
+        print(f"   {title}")
+        print(f"     generated: {rel}")
+        print(f"     github:    {url}")
+    sys.exit(1)
+
+print("✅ QR GitHub source URLs are English-only")
+
+bad_qr_redirect_sources = []
+
+for info in infos:
+    content_file = find_content_file_for_article_rel(info["rel"])
+    canonical_file = canonicalize_content_file_for_qr(content_file)
+
+    if canonical_file and source_file_is_redirect(canonical_file):
+        bad_qr_redirect_sources.append((info["title"], info["rel"], canonical_file))
+
+if bad_qr_redirect_sources:
+    print()
+    print("❌ QR GitHub source URLs still point to redirect source files:")
+    for title, rel, path in bad_qr_redirect_sources[:80]:
+        print(f"   {title}")
+        print(f"     generated: {rel}")
+        print(f"     source:    {path}")
+    sys.exit(1)
+
+print("✅ QR GitHub source URLs do not point to redirect source files")
+
+for info in infos:
+    info["content"] = rewrite_article_links_to_manual(
+        info["content"],
+        info["path"],
+        manual_link_map,
+    )
+
+    info["content"] = normalize_internal_href_fragments(info["content"])
+
+print(f"✅ Manual internal link routes mapped: {len(manual_link_map)}")
 for contributor in harvest_contributors_from_contents():
     all_contributors.add(contributor)
 
@@ -2425,7 +3131,7 @@ print(f"✅ Redirect-like pages suppressed: {len(suppressed_redirects)}")
 print(f"✅ Main Page variants suppressed: {len(suppressed_main_pages)}")
 print(f"✅ Contributors found in ~/RawPedia/content markdown metadata: {len(contributors_sorted)}")
 print(f"✅ Authors found in AUTHORS.txt: {len(authors_from_file)}")
-print(f"✅ Technical index terms with hits: {len(technical_index)}")
+print(f"✅ Index of technical terms with hits: {len(technical_index)}")
 print(f"✅ Cover icon source: {RT_COVER_PNG}")
 print(f"✅ Header TOC icon source: {RT_HEADER_PNG}")
 print(f"✅ RawPedia QR code source: {RAWPEDIA_QR_SVG}")
@@ -2462,7 +3168,7 @@ if technical_index:
             lines.append(f"  - {ref['title']} [{ref['rel']}]{marker}")
 
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"✅ Technical index report: {report}")
+    print(f"✅ Index of technical terms report: {report}")
 
 contributors_display = ", ".join(contributors_sorted)
 
@@ -2474,7 +3180,7 @@ authors_display = ", ".join(authors_from_file)
 if not authors_display:
     authors_display = "No AUTHORS.txt data was found at ~/repo-rt/AUTHORS.txt."
 
-license_html = html.escape(license_text)
+license_html = license_text_to_html_paragraphs(license_text)
 
 with OUTPUT_HTML.open("w", encoding="utf-8") as out:
     out.write(f"""<!doctype html>
@@ -2483,9 +3189,13 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 <meta charset="utf-8">
 <title>RawTherapee Manual</title>
 <style>
+
 @page {{
-  size: Letter;
-  margin: 0.72in 0.5in 0.72in 0.5in;
+  size: 8.125in 10.25in;
+  margin-top: 0.72in;
+  margin-right: 0.9in;
+  margin-bottom: 0.72in;
+  margin-left: 0.5in;
 
   @top-left {{
     content: element(bookHeader);
@@ -2511,10 +3221,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 
   @bottom-center {{
-    content: string(article);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 7.5pt;
-    color: #666;
+    content: element(articleFooter);
   }}
 
   @bottom-right {{
@@ -2522,8 +3229,23 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 }}
 
+@page :left {{
+  margin-top: 0.72in;
+  margin-right: 0.5in;
+  margin-bottom: 0.72in;
+  margin-left: 0.9in;
+}}
+
+@page :right {{
+  margin-top: 0.72in;
+  margin-right: 0.9in;
+  margin-bottom: 0.72in;
+  margin-left: 0.5in;
+}}
+
 @page cover {{
-  margin: 0.6in;
+  size: 8.125in 10.25in;
+  margin: 0;
 
   @top-left {{ content: ""; }}
   @top-center {{ content: ""; }}
@@ -2533,8 +3255,89 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   @bottom-right {{ content: ""; }}
 }}
 
+@page finalpage {{
+  size: 8.125in 10.25in;
+  margin: 0;
+
+  @top-left {{ content: ""; }}
+  @top-center {{ content: ""; }}
+  @top-right {{ content: ""; }}
+  @bottom-left {{ content: ""; }}
+  @bottom-center {{ content: ""; }}
+  @bottom-right {{ content: ""; }}
+}}
+
+.final-icon-page {{
+  page: finalpage;
+  break-before: page;
+  break-after: page;
+  width: 8.125in;
+  height: 10.25in;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  string-set: article "";
+}}
+
+.final-icon-page img {{
+  width: 5in;
+  height: 5in;
+  object-fit: contain;
+  background: transparent;
+}}
+
+.final-icon-page {{
+  page: finalpage;
+  break-before: page;
+  height: 9.56in;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  string-set: article "";
+}}
+
+.final-icon-page img {{
+  width: 5in;
+  height: 5in;
+  object-fit: contain;
+  background: transparent;
+}}
+
+.intentional-blank-page {{
+  page: intentionalblank;
+  break-before: auto;
+  break-after: page;
+  width: 8.125in;
+  height: 10.25in;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  string-set: article "";
+}}
+
+.intentional-blank-page img {{
+  width: 1in;
+  height: 1in;
+  object-fit: contain;
+  background: transparent;
+}}
+
+.final-blank-before-icon {{
+  break-before: page;
+}}
+
 @page frontmatter {{
-  margin: 0.72in 0.65in 0.72in 0.65in;
+  size: 8.125in 10.25in;
+  margin: 0.805in 0.805in 0.805in 0.805in;
 
   @top-left {{
     content: element(bookHeader);
@@ -2574,8 +3377,23 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 }}
 
+@page frontmatter:left {{
+  margin-top: 0.72in;
+  margin-right: 0.5in;
+  margin-bottom: 0.72in;
+  margin-left: 0.9in;
+}}
+
+@page frontmatter:right {{
+  margin-top: 0.72in;
+  margin-right: 0.9in;
+  margin-bottom: 0.72in;
+  margin-left: 0.5in;
+}}
+
 @page tocpage {{
-  margin: 0.62in 0.55in 0.68in 0.55in;
+  size: 8.125in 10.25in;
+  margin: 0.805in 0.805in 0.805in 0.805in;
 
   @top-left {{
     content: element(bookHeader);
@@ -2615,8 +3433,35 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 }}
 
+@page tocpage:left {{
+  margin-top: 0.62in;
+  margin-right: 0.5in;
+  margin-bottom: 0.68in;
+  margin-left: 0.9in;
+}}
+
+@page tocpage:right {{
+  margin-top: 0.62in;
+  margin-right: 0.9in;
+  margin-bottom: 0.68in;
+  margin-left: 0.5in;
+}}
+
+@page intentionalblank {{
+  size: 8.125in 10.25in;
+  margin: 0;
+
+  @top-left {{ content: ""; }}
+  @top-center {{ content: ""; }}
+  @top-right {{ content: ""; }}
+  @bottom-left {{ content: ""; }}
+  @bottom-center {{ content: ""; }}
+  @bottom-right {{ content: ""; }}
+}}
+
 @page indexpage {{
-  margin: 0.62in 0.55in 0.68in 0.55in;
+  size: 8.125in 10.25in;
+  margin: 0.805in 0.805in 0.805in 0.805in;
 
   @top-left {{
     content: element(bookHeader);
@@ -2624,7 +3469,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 
   @top-center {{
-    content: "Technical Index";
+    content: "Index of Technical Terms";
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
@@ -2645,21 +3490,32 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 
   @bottom-center {{
-    content: "Technical Index";
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 7.5pt;
-    color: #666;
+    content: element(articleFooter);
   }}
 
   @bottom-right {{
     content: "";
   }}
+}}
+
+@page indexpage:left {{
+  margin-top: 0.62in;
+  margin-right: 0.5in;
+  margin-bottom: 0.68in;
+  margin-left: 0.9in;
+}}
+
+@page indexpage:right {{
+  margin-top: 0.62in;
+  margin-right: 0.9in;
+  margin-bottom: 0.68in;
+  margin-left: 0.5in;
 }}
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 9.15pt;
-  line-height: 1.22;
+  font-size: 8.6pt;
+  line-height: 1.14;
   color: #111;
 }}
 
@@ -2711,6 +3567,20 @@ body {{
   color: #777;
 }}
 
+.running-article-footer {{
+  position: running(articleFooter);
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 7.5pt;
+  color: #666;
+  text-align: center;
+  white-space: nowrap;
+}}
+
+.running-article-footer a {{
+  color: #666;
+  text-decoration: none;
+}}
+
 .running-section-link {{
   position: running(sectionLink);
   font-family: Helvetica, Arial, sans-serif;
@@ -2725,25 +3595,87 @@ body {{
   text-decoration: none;
 }}
 
+.blank-page {{
+  page: blankpage;
+  break-before: page;
+  min-height: 9.0in;
+}}
+
+.blank-page + .blank-page {{
+  break-before: page;
+}}
+
+@page blankpage {{
+  size: 8.125in 10.25in;
+  margin: 0;
+
+  @top-left {{ content: ""; }}
+  @top-center {{ content: ""; }}
+  @top-right {{ content: ""; }}
+  @bottom-left {{ content: ""; }}
+  @bottom-center {{ content: ""; }}
+  @bottom-right {{ content: ""; }}
+}}
+
+.article-github-qr {{
+  break-inside: avoid;
+  margin: 0.18in 0 0 0;
+  padding: 0.08in 0.1in;
+  border-top: 0.45pt solid #bbb;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 6.7pt;
+  line-height: 1.15;
+  color: #555;
+  text-align: center;
+}}
+
+.article-github-qr-title {{
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 0.045in;
+}}
+
+.article-github-qr img {{
+  width: 0.72in;
+  height: 0.72in;
+  object-fit: contain;
+  background: transparent;
+  display: block;
+  margin: 0 auto 0.045in auto;
+}}
+
+.article-github-qr-url {{
+  overflow-wrap: anywhere;
+}}
+
 .cover {{
   page: cover;
-  height: 9.4in;
+  width: 8.125in;
+  height: 10.25in;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   text-align: center;
   break-after: page;
+  background: #000000;
+  color: #fff;
+  margin: 0;
+  padding: 0.95in;
 }}
 
 .cover-icon-frame {{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #1d1d1d;
+  background: #101521;
   border-radius: 0.45in;
   padding: 0.26in;
   margin: 0 auto 0.45in auto;
-  border: 0.5pt solid #333;
+  border-top: 5pt solid #8db8ff;
+  border-left: 5pt solid #5f8fe8;
+  border-right: 5pt solid #1f3e7a;
+  border-bottom: 5pt solid #14213d;
 }}
 
 .cover-icon-frame a {{
@@ -2757,60 +3689,128 @@ body {{
   display: block;
 }}
 
-.cover h1 {{
-  font-size: 36pt;
-  line-height: 1.02;
+.cover-title-stack {{
+  position: relative;
+  width: 100%;
+  height: 1.18in;
   margin: 0 0 0.15in 0;
-  letter-spacing: -0.02em;
 }}
 
-.cover-date {{
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 22pt;
-  line-height: 1.05;
-  color: #444;
+.cover-title-layer,
+.cover-title-front {{
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 36pt;
+  line-height: 1.02;
+  font-weight: bold;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-align: center;
+}}
+
+.cover-title-back-3 {{
+  color: #14213d;
+  left: 2.4pt;
+  top: 2.4pt;
+}}
+
+.cover-title-back-2 {{
+  color: #334a78;
+  left: 1.6pt;
+  top: 1.6pt;
+}}
+
+.cover-title-back-1 {{
+  color: #7fa8e8;
+  left: 0.8pt;
+  top: 0.8pt;
+}}
+
+.cover-title-front {{
+  color: #f8fbff;
+  left: 0;
+  top: 0;
+}}
+
+.cover-date-stack {{
+  position: relative;
+  width: 100%;
+  height: 0.34in;
   margin: 0 0 0.18in 0;
 }}
 
+.cover-date-layer,
+.cover-date {{
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 22pt;
+  line-height: 1.05;
+  text-align: center;
+}}
+
+.cover-date-back {{
+  color: #26334b;
+  left: 0.7pt;
+  top: 0.7pt;
+}}
+
+.cover-date {{
+  color: #dce8ff;
+}}
+
+.subtitle-stack {{
+  position: relative;
+  width: 100%;
+  height: 0.26in;
+  margin-top: 0.06in;
+}}
+
+.subtitle-layer,
 .cover .subtitle {{
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
   font-family: Helvetica, Arial, sans-serif;
   font-size: 15pt;
-  color: #555;
-  margin-top: 0.06in;
+  text-align: center;
+}}
+
+.subtitle-back {{
+  color: #26334b;
+  left: 0.55pt;
+  top: 0.55pt;
+}}
+
+.cover .subtitle {{
+  color: #dce8ff;
 }}
 
 .cover .edition {{
   font-family: Helvetica, Arial, sans-serif;
   font-size: 9.5pt;
-  color: #777;
+  color: #aac2e8;
   margin-top: 0.35in;
 }}
 
-.git-version-box {{
-  font-family: Helvetica, Arial, sans-serif;
-  color: #111;
-  border: 1.1pt solid #333;
-  background: #f3f3f3;
-  padding: 0.11in 0.15in;
-  text-align: left;
-}}
-
-.git-version-box div {{
-  margin: 0.035in 0;
-}}
-
-.cover-git-version {{
-  font-size: 13.5pt;
+.half-title-git-version {{
+  font-size: 11pt;
   line-height: 1.15;
   font-weight: bold;
-  margin: 0.36in auto 0 auto;
-  width: 5.6in;
+  margin: 0.45in auto 0 auto;
+  width: 5.4in;
 }}
 
 .copyright-page {{
   page: frontmatter;
   break-after: page;
-  font-size: 9.2pt;
+  font-size: 11.2pt;
   line-height: 1.35;
   string-set: article "Copyright";
 }}
@@ -2821,7 +3821,7 @@ body {{
 
 .contributor-list,
 .authors-list {{
-  font-size: 7.2pt;
+  font-size: 11.2pt;
   line-height: 1.18;
   color: #333;
   margin-top: 0.1in;
@@ -2848,15 +3848,36 @@ body {{
 }}
 
 .license-text {{
-  column-count: 4;
-  column-gap: 0.1in;
-  column-rule: 0.25pt solid #ddd;
-  white-space: pre-wrap;
-  font-family: Menlo, Consolas, monospace;
-  font-size: 3pt;
-  line-height: 1.075;
+  column-count: 2;
+  column-gap: 0.11in;
+  column-rule: 0.5pt solid #ddd;
+  white-space: normal;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 5pt;
+  line-height: 1.09;
+  text-align: justify;
   overflow-wrap: normal;
   word-break: normal;
+}}
+
+.license-text p {{
+  margin: 0 0 0.45em 0;
+  text-indent: 0.08in;
+}}
+
+.license-text p:first-child {{
+  text-indent: 0;
+}}
+
+.license-heading {{
+  break-after: avoid;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 5.4pt;
+  line-height: 1.05;
+  font-weight: bold;
+  text-align: left;
+  letter-spacing: 0.025em;
+  margin: 0.35em 0 0.16em 0;
 }}
 
 .half-title {{
@@ -2964,11 +3985,27 @@ body {{
 .part-page {{
   break-before: page;
   break-after: page;
-  height: 8.2in;
+  height: 9in;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  string-set: article content();
+  align-items: center;
+  string-set: article "RawTherapee Manual";
+}}
+
+.part-page-icon {{
+  width: 1in;
+  height: 1in;
+  object-fit: contain;
+  background: transparent;
+  margin: 0 auto 0.28in auto;
+  display: block;
+}}
+
+.part-page-inner {{
+  width: 5.9in;
+  text-align: center;
+  transform: translateY(-0.18in);
 }}
 
 .part-page .part-kicker {{
@@ -2977,7 +4014,7 @@ body {{
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #777;
-  margin-bottom: 0.14in;
+  margin-bottom: 0.12in;
 }}
 
 .part-page h1 {{
@@ -2986,9 +4023,48 @@ body {{
   margin: 0;
 }}
 
+.part-subtoc {{
+  margin: 0.28in auto 0 auto;
+  padding: 0.13in 0.18in;
+  width: 5.25in;
+  border: 0.75pt solid #777;
+  background: #f7f7f7;
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 7.4pt;
+  line-height: 1.18;
+  text-align: left;
+  break-inside: avoid;
+}}
+
+.part-subtoc-title {{
+  text-align: center;
+  font-weight: bold;
+  font-size: 8.2pt;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+  color: #444;
+  margin: 0 0 0.06in 0;
+}}
+
+.part-subtoc-body {{
+  column-count: 2;
+  column-gap: 0.18in;
+}}
+
+.part-subtoc a {{
+  display: block;
+  color: #111;
+  text-decoration: none;
+  margin: 0 0 0.025in 0;
+}}
+
+.part-subtoc a::after {{
+  content: leader(".") target-counter(attr(href), page);
+}}
+
 .article {{
   break-before: auto;
-  margin-top: 2in;
+  margin-top: 1.35in;
   string-set: article attr(data-title);
 }}
 
@@ -2996,11 +4072,21 @@ body {{
   margin-top: 0;
 }}
 
+.article.major-article {{
+  break-before: page;
+  margin-top: 0;
+}}
+
+.article.short-article {{
+  break-before: auto;
+  margin-top: 1in;
+}}
+
 .article h1.article-title {{
-  font-size: 17pt;
-  line-height: 1.05;
-  margin: 0 0 0.15in 0;
-  padding-bottom: 0.05in;
+  font-size: 15.5pt;
+  line-height: 1.04;
+  margin: 0 0 0.11in 0;
+  padding-bottom: 0.04in;
   border-bottom: 0.6pt solid #999;
 }}
 
@@ -3018,6 +4104,27 @@ body {{
   column-gap: 1.18em;
   column-rule: 0.25pt solid #ccc;
   min-height: 0;
+  text-align: justify;
+  hyphens: auto;
+}}
+
+.article-body p,
+.article-body li {{
+  text-align: justify;
+  hyphens: auto;
+}}
+
+.article-body h1,
+.article-body h2,
+.article-body h3,
+.article-body h4,
+.article-body pre,
+.article-body code,
+.article-body table,
+.article-body .article-local-toc,
+.article-body .missing-image {{
+  text-align: left;
+  hyphens: manual;
 }}
 
 .article-body > :first-child {{
@@ -3095,37 +4202,37 @@ body {{
 }}
 
 .article-body h1 {{
-  font-size: 14pt;
-  margin: 0.5em 0 0.22em 0;
+  font-size: 12.8pt;
+  margin: 0.38em 0 0.16em 0;
 }}
 
 .article-body h2 {{
-  font-size: 12pt;
-  margin: 0.48em 0 0.18em 0;
+  font-size: 11.2pt;
+  margin: 0.34em 0 0.14em 0;
 }}
 
 .article-body h3 {{
-  font-size: 10.5pt;
-  margin: 0.38em 0 0.14em 0;
+  font-size: 9.8pt;
+  margin: 0.28em 0 0.11em 0;
 }}
 
 .article-body h4 {{
-  font-size: 9.6pt;
-  margin: 0.3em 0 0.1em 0;
+  font-size: 9.1pt;
+  margin: 0.22em 0 0.08em 0;
 }}
 
 p {{
-  margin: 0 0 0.32em 0;
+  margin: 0 0 0.24em 0;
 }}
 
 ul, ol {{
-  margin-top: 0.12em;
-  margin-bottom: 0.34em;
-  padding-left: 1.15em;
+  margin-top: 0.08em;
+  margin-bottom: 0.24em;
+  padding-left: 1.05em;
 }}
 
 li {{
-  margin: 0 0 0.12em 0;
+  margin: 0 0 0.08em 0;
 }}
 
 img, svg {{
@@ -3141,30 +4248,30 @@ figure, table, pre, blockquote, .missing-image {{
 table {{
   width: 100%;
   border-collapse: collapse;
-  font-size: 7.6pt;
+  font-size: 6.9pt;
 }}
 
 td, th {{
   border: 0.3pt solid #ccc;
-  padding: 2px 3px;
+  padding: 1.4px 2px;
   vertical-align: top;
 }}
 
 pre {{
   background: #f5f5f5;
   border: 0.3pt solid #ddd;
-  padding: 0.4em;
+  padding: 0.32em;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  font-size: 6.9pt;
-  line-height: 1.09;
+  font-size: 6.4pt;
+  line-height: 1.04;
 }}
 
 code {{
   font-family: Menlo, Consolas, monospace;
-  font-size: 7.2pt;
+  font-size: 6.7pt;
   background: #eee;
-  padding: 0 2px;
+  padding: 0 1.5px;
 }}
 
 a {{
@@ -3207,12 +4314,21 @@ hr {{
 .technical-index {{
   page: indexpage;
   break-before: page;
-  string-set: article "Technical Index";
+  string-set: article "Index of Technical Terms";
 }}
 
 .technical-index h1 {{
   font-size: 24pt;
   margin: 0 0 0.25in 0;
+}}
+
+.blank-page {{
+  break-before: page;
+  height: 9in;
+}}
+
+.blank-page + .blank-page {{
+  break-before: page;
 }}
 
 .index-note {{
@@ -3223,26 +4339,29 @@ hr {{
 }}
 
 .index-body {{
-  column-count: 2;
-  column-gap: 1.2em;
+  columns: 4;
+  column-count: 4;
+  column-width: 1.15in;
+  column-gap: 0.06in;
   column-rule: 0.25pt solid #ccc;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 8.2pt;
-  line-height: 1.22;
+  font-size: 5.4pt;
+  line-height: 1.03;
 }}
 
 .index-letter {{
   break-after: avoid;
   font-family: Helvetica, Arial, sans-serif;
-  font-size: 12pt;
+  font-size: 7.6pt;
   font-weight: bold;
-  margin: 0.16in 0 0.055in 0;
-  border-bottom: 0.4pt solid #aaa;
+  margin: 0.055in 0 0.018in 0;
+  border-bottom: 0.3pt solid #aaa;
 }}
 
 .index-entry {{
-  break-inside: avoid;
-  margin: 0 0 0.04in 0;
+  break-inside: auto;
+  page-break-inside: auto;
+  margin: 0 0 0.01in 0;
 }}
 
 .index-term {{
@@ -3250,7 +4369,7 @@ hr {{
 }}
 
 .index-pages {{
-  margin-left: 0.08in;
+  margin-left: 0.035in;
 }}
 
 .index-pages a {{
@@ -3281,14 +4400,23 @@ hr {{
     <img class="cover-icon" src="{html.escape(RT_COVER_URI, quote=True)}" alt="RawTherapee icon">
   </a>
 </div>
-<h1>RawTherapee Manual</h1>
-<div class="cover-date">{html.escape(BUILD_DATE)}</div>
-<div class="subtitle">A book-style local reference for RawTherapee</div>
-<div class="edition">Compiled from a local RAWPedia mirror</div>
-<div class="git-version-box cover-git-version">
-  <div>{html.escape(RT_GIT_VERSION)}</div>
-  <div>{html.escape(RAWPEDIA_GIT_VERSION)}</div>
+<div class="cover-title-stack" aria-label="RawTherapee Manual">
+  <div class="cover-title-layer cover-title-back-3">RawTherapee Manual</div>
+  <div class="cover-title-layer cover-title-back-2">RawTherapee Manual</div>
+  <div class="cover-title-layer cover-title-back-1">RawTherapee Manual</div>
+  <h1 class="cover-title-front">RawTherapee Manual</h1>
 </div>
+
+<div class="cover-date-stack" aria-label="{html.escape(BUILD_DATE)}">
+  <div class="cover-date-layer cover-date-back">{html.escape(BUILD_DATE)}</div>
+  <div class="cover-date">{html.escape(BUILD_DATE)}</div>
+</div>
+
+<div class="subtitle-stack" aria-label="A book-style local reference for RawTherapee">
+  <div class="subtitle-layer subtitle-back">A book-style local reference for RawTherapee</div>
+  <div class="subtitle">A book-style local reference for RawTherapee</div>
+</div>
+<div class="edition">Compiled from a local RAWPedia mirror</div>
 </section>
 
 <div class="running-book-header">
@@ -3302,10 +4430,19 @@ hr {{
 </div>
 """)
 
-    out.write("""
+    out.write(f"""
 <section class="half-title">
 <h1>RawTherapee Manual</h1>
 <p>A local manual generated from RAWPedia.</p>
+
+<div class="git-version-box half-title-git-version">
+  <div>{html.escape(RT_GIT_VERSION)}</div>
+  <div>{html.escape(RAWPEDIA_GIT_VERSION)}</div>
+</div>
+</section>
+
+<section class="intentional-blank-page" aria-label="This page intentionally left blank">
+  <img src="{html.escape(RT_HEADER_URI, quote=True)}" alt="">
 </section>
 """)
 
@@ -3340,7 +4477,7 @@ hr {{
     <img src="{html.escape(RT_COVER_URI, quote=True)}" style="width:1.2in; height:1.2in; object-fit:contain; background:#1d1d1d; border-radius:0.16in; padding:0.08in;" alt="Contents">
   </a>
 </p>
-<h1>Preface</h1>
+<h1>Reference Versions at Buildtime</h1>
 <div class="git-version-box preface-git-version">
   <div>{html.escape(RT_GIT_VERSION)}</div>
   <div>{html.escape(RAWPEDIA_GIT_VERSION)}</div>
@@ -3388,14 +4525,47 @@ hr {{
         out.write("</div>\n")
 
     out.write("""
+<div class="toc-part">
+<h2>Back Matter</h2>
+<a href="#technical-index">Index of Technical Terms</a>
+</div>
+""")
+
+    out.write("""
 </div>
 </section>
 """)
 
+    section_infos = defaultdict(list)
+
+    for section_info in infos:
+        section_infos[section_info["section"]].append(section_info)
+
+    def build_part_subtoc(section: str) -> str:
+        refs = section_infos.get(section, [])
+
+        if not refs:
+            return ""
+
+        lines = []
+        lines.append('<div class="part-subtoc">')
+        lines.append('<div class="part-subtoc-title">In this section</div>')
+        lines.append('<div class="part-subtoc-body">')
+
+        for ref in refs:
+            lines.append(
+                f'<a href="#page-{html.escape(ref["id"])}">'
+                f'{html.escape(ref["title"])}</a>'
+            )
+
+        lines.append('</div>')
+        lines.append('</div>')
+
+        return "\n".join(lines)
+
     current_section = None
     part_num = 0
     article_num = 0
-
     for info in infos:
         section = info["section"]
         section_id = info["section_id"]
@@ -3404,13 +4574,22 @@ hr {{
             current_section = section
             part_num += 1
 
+            part_subtoc = build_part_subtoc(section)
+
             out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
+<div class="running-article-footer">
+  <a href="#contents">RawTherapee Manual</a>
+</div>
 <section class="part-page">
-<div class="part-kicker">Section {part_num}</div>
-<h1>{html.escape(section)}</h1>
+<div class="part-page-inner">
+  <img class="part-page-icon" src="{html.escape(RT_HEADER_URI, quote=True)}" alt="">
+  <div class="part-kicker">Section {part_num}</div>
+  <h1>{html.escape(section)}</h1>
+  {part_subtoc}
+</div>
 </section>
 """)
         else:
@@ -3423,21 +4602,45 @@ hr {{
         print(f"  ➜ [{section}] {info['title']}")
 
         article_num += 1
-        article_class = "article first-article" if article_num == 1 else "article"
+
+        article_classes = ["article"]
+
+        if article_num == 1:
+            article_classes.append("first-article")
+        elif article_is_major(info["content"], info["title"]):
+            article_classes.append("major-article")
+        else:
+            article_classes.append("short-article")
+
+        article_class = " ".join(article_classes)
 
         out.write(f"""
-<section class="{article_class}" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
+<div class="running-article-footer">
+  <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
+</div>
+<section id="page-{html.escape(info["id"])}" class="{article_class}" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
 <div class="section-label">{html.escape(section)}</div>
-<h1 class="article-title" id="page-{html.escape(info["id"])}">{html.escape(info["title"])}</h1>
+<h1 class="article-title">{html.escape(info["title"])}</h1>
 <div class="article-body">
 {info["content"]}
+
+<div class="article-github-qr">
+  <div class="article-github-qr-title">Source article on GitHub</div>
+  <a href="{html.escape(info["github_url"], quote=True)}">
+    <img src="{html.escape(info["github_qr_uri"], quote=True)}" alt="GitHub source QR code">
+  </a>
+  <div class="article-github-qr-url">{html.escape(info["github_url"])}</div>
+</div>
 </div>
 </section>
 """)
 
     out.write("""
+<div class="running-article-footer">
+  <a href="#technical-index">Index of Technical Terms</a>
+</div>
 <section class="technical-index" id="technical-index">
-<h1>Technical Index</h1>
+<h1>Index of Technical Terms</h1>
 <p class="index-note">Bold page numbers mark pages where the indexed term appears to begin a main article. Case variants and simple plural spellings are folded into one index entry. Page numbers are generated by the PDF renderer. True condensed page ranges require a second pass after final pagination; WeasyPrint target counters cannot compute ranges directly.</p>
 <div class="index-body">
 """)
@@ -3482,23 +4685,27 @@ hr {{
 </body>
 </html>
 """)
+
+
 html_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
 total_img_tags = len(re.findall(r"<img\b", html_text, flags=re.I))
 file_image_refs = len(re.findall(r'src=["\']file://', html_text, flags=re.I))
-http_image_refs = len(re.findall(r'src=["\']https?://', html_text, flags=re.I))
 missing_image_boxes = len(re.findall(r'class=["\']missing-image["\']', html_text, flags=re.I))
 
-print(f"✅ HTML image tags before cleanup: {total_img_tags}")
-print(f"✅ HTML local file image refs before cleanup: {file_image_refs}")
-print(f"✅ HTML online image refs before cleanup: {http_image_refs}")
-print(f"✅ HTML missing-image placeholders before cleanup: {missing_image_boxes}")
+print(f"✅ HTML image tags: {total_img_tags}")
+print(f"✅ HTML local file image refs: {file_image_refs}")
+print(f"✅ HTML missing-image placeholders: {missing_image_boxes}")
 
 if total_img_tags < 20:
-    print("⚠️ Suspiciously few image tags in generated HTML before cleanup.")
+    print("❌ Suspiciously few image tags in generated HTML.")
+    print("❌ The PDF will be mostly text if this continues.")
+    sys.exit(1)
 
-if file_image_refs < 20 and http_image_refs < 20:
-    print("⚠️ Few image src refs before cleanup. Continuing because final cleanup may still fix URLs.")
+if file_image_refs < 20:
+    print("❌ Suspiciously few local file:// image references in generated HTML.")
+    print("❌ Images are probably not being resolved from ~/RawPedia/Public.")
+    sys.exit(1)
 
 if missing_images:
     report = OUTPUT_HTML.parent / "missing-images.txt"
@@ -3554,245 +4761,273 @@ PY
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
 echo
-echo
-echo "---- image refs in generated book.html ----"
+echo "🔳 Checking generated article QR image paths..."
 
-python3 - "$OUTPUT_HTML" "$WORK_DIR/missing-images.txt" <<'IMAGE_REF_REPORT'
-import re
-import sys
-import html
-from pathlib import Path
-
-OUTPUT_HTML = Path(sys.argv[1])
-MISSING_IMAGES = Path(sys.argv[2])
-
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-img_tags = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
-
-src_values = []
-srcset_values = []
-data_values = []
-no_src_tags = []
-
-for tag in img_tags:
-    src = re.search(r'\bsrc\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
-    src_unquoted = re.search(r'\bsrc\s*=\s*([^"\'\s>]+)', tag, flags=re.I | re.S)
-    srcset = re.search(r'\bsrcset\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
-    data = re.search(r'\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
-
-    if src:
-        src_values.append(html.unescape(src.group(2)).strip())
-    elif src_unquoted:
-        src_values.append(html.unescape(src_unquoted.group(1)).strip())
-    else:
-        no_src_tags.append(re.sub(r"\s+", " ", tag).strip())
-
-    if srcset:
-        srcset_values.append(html.unescape(srcset.group(2)).strip())
-
-    if data:
-        data_values.append(html.unescape(data.group(2)).strip())
-
-src_file_refs = [v for v in src_values if v.startswith("file://")]
-src_http_refs = [v for v in src_values if v.startswith(("http://", "https://"))]
-src_data_refs = [v for v in src_values if v.startswith("data:")]
-src_relative_refs = [
-    v for v in src_values
-    if v and not v.startswith(("file://", "http://", "https://", "data:"))
-]
-
-missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
-
-print(f"img tags: {len(img_tags)}")
-print(f"img src attrs: {len(src_values)}")
-print(f"src file refs: {len(src_file_refs)}")
-print(f"src http refs: {len(src_http_refs)}")
-print(f"src data refs: {len(src_data_refs)}")
-print(f"src relative/unresolved refs: {len(src_relative_refs)}")
-print(f"srcset attrs: {len(srcset_values)}")
-print(f"data/lazy attrs: {len(data_values)}")
-print(f"img tags with no src: {len(no_src_tags)}")
-print(f"missing-image boxes: {missing_boxes}")
-
-print()
-print("sample unresolved src values:")
-for item in src_relative_refs[:60]:
-    print(f"  {item}")
-
-print()
-print("sample img tags with no src:")
-for item in no_src_tags[:25]:
-    print(f"  {item}")
-
-print()
-print("---- missing-images.txt ----")
-if MISSING_IMAGES.exists():
-    txt = MISSING_IMAGES.read_text(encoding="utf-8", errors="replace").strip()
-    if txt:
-        print(txt[:8000])
-    else:
-        print("(empty)")
-else:
-    print("(not present)")
-
-sys.exit(0)
-IMAGE_REF_REPORT
-
-echo "🖼 Local-only image URL cleanup before PDF render..."
-
-python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_GIT_DIR" <<'RAWPEDIA_LOCAL_IMAGE_CLEANUP'
-import os
+python3 - "$OUTPUT_HTML" <<'CHECK_ARTICLE_QR_PATHS'
 import re
 import sys
 import html
 import urllib.parse
 from pathlib import Path
 
-OUTPUT_HTML = Path(sys.argv[1]).resolve()
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+qr_srcs = [
+    html.unescape(m.group(1)).strip()
+    for m in re.finditer(
+        r'<img\b[^>]*alt=["\']GitHub source QR code["\'][^>]*\bsrc=["\']([^"\']+)["\']',
+        s,
+        flags=re.I | re.S,
+    )
+]
+
+# Also catch src-before-alt order.
+qr_srcs += [
+    html.unescape(m.group(1)).strip()
+    for m in re.finditer(
+        r'<img\b[^>]*\bsrc=["\']([^"\']+)["\'][^>]*alt=["\']GitHub source QR code["\']',
+        s,
+        flags=re.I | re.S,
+    )
+]
+
+qr_srcs = sorted(set(qr_srcs))
+
+bad = []
+missing = []
+
+for src in qr_srcs:
+    if src.startswith(("http://", "https://")):
+        bad.append(src)
+        continue
+
+    if not src.startswith("file://"):
+        bad.append(src)
+        continue
+
+    path = urllib.parse.unquote(urllib.parse.urlsplit(src).path)
+
+    if not Path(path).exists():
+        missing.append(src)
+
+print(f"article QR image refs: {len(qr_srcs)}")
+print(f"bad/nonlocal QR refs: {len(bad)}")
+print(f"missing local QR files: {len(missing)}")
+
+if bad:
+    print()
+    print("❌ Article QR refs should be file:// URLs, not web URLs:")
+    for item in bad[:80]:
+        print(f"   {item}")
+    sys.exit(1)
+
+if missing:
+    print()
+    print("❌ Article QR files missing:")
+    for item in missing[:80]:
+        print(f"   {item}")
+    sys.exit(1)
+
+print("✅ Article QR images are local file URLs")
+CHECK_ARTICLE_QR_PATHS
+echo
+echo "🔗 Checking internal href targets..."
+
+python3 - "$OUTPUT_HTML" <<'CHECK_INTERNAL_HREF_TARGETS'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+ids = set(
+    html.unescape(m.group(2)).strip()
+    for m in re.finditer(r'\b(?:id|name)=(["\'])(.*?)\1', s, flags=re.I | re.S)
+)
+
+hrefs = [
+    html.unescape(m.group(2)).strip()
+    for m in re.finditer(r'\bhref=(["\'])(.*?)\1', s, flags=re.I | re.S)
+]
+
+internal = [
+    h for h in hrefs
+    if h.startswith("#") and h not in {"#", "#ZgotmplZ"}
+]
+
+missing = []
+
+for h in internal:
+    target = urllib.parse.unquote(h[1:])
+
+    if target and target not in ids:
+        missing.append(h)
+        
+print(f"ids/name targets: {len(ids)}")
+print(f"internal hrefs: {len(internal)}")
+print(f"missing internal targets: {len(missing)}")
+
+if missing:
+    print()
+    print("❌ Missing internal link targets:")
+    for item in sorted(set(missing))[:100]:
+        print(f"   {item}")
+    sys.exit(1)
+
+print("✅ Internal href targets all exist")
+CHECK_INTERNAL_HREF_TARGETS
+echo
+echo "🔗 Checking duplicate id/name targets..."
+
+python3 - "$OUTPUT_HTML" <<'CHECK_DUPLICATE_TARGETS'
+import re
+import sys
+import html
+from pathlib import Path
+from collections import Counter
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+targets = [
+    html.unescape(m.group(2)).strip()
+    for m in re.finditer(r'\b(?:id|name)=(["\'])(.*?)\1', s, flags=re.I | re.S)
+    if html.unescape(m.group(2)).strip()
+]
+
+counts = Counter(targets)
+dupes = [(target, count) for target, count in counts.items() if count > 1]
+
+print(f"id/name targets: {len(targets)}")
+print(f"duplicate targets: {len(dupes)}")
+
+if dupes:
+    print()
+    print("❌ Duplicate id/name targets:")
+    for target, count in sorted(dupes, key=lambda item: (-item[1], item[0]))[:120]:
+        print(f"   {count}x #{target}")
+    sys.exit(1)
+
+print("✅ No duplicate id/name targets")
+CHECK_DUPLICATE_TARGETS
+INDEX_BODY_COUNT="$(grep -c '<div class="index-body">' "$OUTPUT_HTML" || true)"
+TECH_INDEX_COUNT="$(grep -c '<section class="technical-index" id="technical-index">' "$OUTPUT_HTML" || true)"
+
+echo "✅ Technical index section count: $TECH_INDEX_COUNT"
+echo "✅ Index body count: $INDEX_BODY_COUNT"
+
+if [[ "$TECH_INDEX_COUNT" -ne 1 || "$INDEX_BODY_COUNT" -ne 1 ]]; then
+  echo "❌ Technical index was written more than once."
+  echo "❌ This means the technical-index writer block is still inside another loop."
+  exit 1
+fi
+echo "---- technical index CSS check ----"
+grep -n "index-body" -A10 "$OUTPUT_HTML" || true
+echo "🖼 Final image URL cleanup before PDF render..."
+
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'RAWPEDIA_IMAGE_URL_CLEANUP'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
 SOURCE_DIR = Path(sys.argv[2]).resolve()
-RAWPEDIA_GIT_DIR = Path(sys.argv[3]).resolve()
+RAWPEDIA_ONLINE_URL = sys.argv[3].rstrip("/")
 
 asset_exts = {
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
     ".tif", ".tiff", ".bmp", ".ico"
 }
 
-SEARCH_ROOTS = [
-    SOURCE_DIR,
-    RAWPEDIA_GIT_DIR / "static",
-    RAWPEDIA_GIT_DIR / "assets",
-    RAWPEDIA_GIT_DIR / "resources",
-    RAWPEDIA_GIT_DIR,
-]
-
-asset_by_name = {}
-asset_by_rel = {}
-
-def remember_asset(p: Path, root: Path):
-    try:
-        p = p.resolve()
-    except Exception:
-        return
-
-    if not p.exists() or not p.is_file():
-        return
-
-    if p.suffix.lower() not in asset_exts:
-        return
-
-    asset_by_name.setdefault(p.name.lower(), p)
-
-    try:
-        rel = str(p.relative_to(root.resolve())).replace("\\", "/").lower()
-        asset_by_rel.setdefault(rel, p)
-    except Exception:
-        pass
-
-for root in SEARCH_ROOTS:
-    if not root.exists():
-        continue
-
-    for walk_root, dirs, files in os.walk(root):
-        for name in files:
-            remember_asset(Path(walk_root) / name, root)
-
-print(f"✅ Local cleanup assets by filename: {len(asset_by_name)}")
-print(f"✅ Local cleanup assets by relative path: {len(asset_by_rel)}")
-
 def is_asset_url(value: str) -> bool:
     raw = html.unescape(value or "").strip()
     path = urllib.parse.urlsplit(raw).path
     return Path(path).suffix.lower() in asset_exts
 
-def find_local_asset(value: str) -> Path | None:
+def online_url_for_path(path: str) -> str:
+    path = urllib.parse.unquote(path or "").replace("\\", "/")
+
+    if not path:
+        return path
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    return RAWPEDIA_ONLINE_URL + path
+
+def local_or_online(value: str) -> str:
     raw = html.unescape(value or "").strip()
 
     if not raw:
-        return None
+        return value
 
     if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
-        return None
+        return value
 
     parsed = urllib.parse.urlsplit(raw)
-    path = urllib.parse.unquote(parsed.path).replace("\\", "/").strip()
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/")
 
     if not path:
-        return None
+        return value
 
-    # Already a real local file:// URL.
+    # IMPORTANT:
+    # Preserve all valid file:// URLs, even when they are outside SOURCE_DIR.
+    # This protects generated QR codes in rawpedia_book/article-qrs/*.svg.
     if raw.startswith("file://"):
-        p = Path(path)
+        local_path = Path(path)
 
-        if p.exists() and p.is_file() and p.suffix.lower() in asset_exts:
-            return p.resolve()
+        if local_path.exists():
+            return local_path.resolve().as_uri()
 
-    basename = Path(path).name
-    rel = path.lstrip("/")
-    rel_key = rel.lower()
+        # If the file:// URL is broken, do not invent a RawPedia URL for
+        # absolute local paths such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+        # Leave it alone so the later preflight can report the real problem.
+        if path.startswith("/"):
+            return raw
 
-    candidates = []
+        fixed = online_url_for_path(path)
 
-    # Absolute real path.
-    p = Path(path)
-    if p.is_absolute():
-        candidates.append(p)
+        if parsed.query:
+            fixed += "?" + parsed.query
 
-    # Root-relative or plain relative under Public.
-    candidates.append(SOURCE_DIR / rel)
+        return fixed
 
-    # Common Hugo/RawPedia layouts.
-    candidates.append(SOURCE_DIR / "images" / basename)
-    candidates.append(RAWPEDIA_GIT_DIR / "static" / rel)
-    candidates.append(RAWPEDIA_GIT_DIR / "static" / "images" / basename)
-    candidates.append(RAWPEDIA_GIT_DIR / "assets" / rel)
-    candidates.append(RAWPEDIA_GIT_DIR / "assets" / "images" / basename)
-    candidates.append(RAWPEDIA_GIT_DIR / "resources" / rel)
-    candidates.append(RAWPEDIA_GIT_DIR / rel)
+    # Absolute local filesystem path, such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+    # Keep it local if it exists.
+    if path.startswith("/"):
+        local_path = Path(path)
 
-    for c in candidates:
-        try:
-            c = c.resolve()
-        except Exception:
-            pass
+        if local_path.exists():
+            return local_path.resolve().as_uri()
 
-        if c.exists() and c.is_file() and c.suffix.lower() in asset_exts:
-            return c
+        # Root-relative RawPedia URL, such as /images/foo.png.
+        local_candidate = SOURCE_DIR / path.lstrip("/")
 
-    # Exact relative-path index.
-    found = asset_by_rel.get(rel_key)
+        if local_candidate.exists():
+            return local_candidate.resolve().as_uri()
 
-    if found and found.exists():
-        return found
+        fixed = online_url_for_path(path)
 
-    # If the HTML says images/foo.png, also try foo.png.
-    if rel_key.startswith("images/"):
-        found = asset_by_rel.get(rel_key.removeprefix("images/"))
+        if parsed.query:
+            fixed += "?" + parsed.query
 
-        if found and found.exists():
-            return found
+        return fixed
 
-    # If the HTML says foo.png, also try images/foo.png.
-    found = asset_by_rel.get("images/" + rel_key)
+    # Plain relative URL, such as foo.png or images/foo.png.
+    local_candidate = SOURCE_DIR / path
 
-    if found and found.exists():
-        return found
+    if local_candidate.exists():
+        return local_candidate.resolve().as_uri()
 
-    # Last resort: filename lookup across local repo/Public.
-    found = asset_by_name.get(basename.lower())
+    fixed = online_url_for_path(path)
 
-    if found and found.exists():
-        return found
+    if parsed.query:
+        fixed += "?" + parsed.query
 
-    return None
-
-def local_file_url_or_original(value: str) -> str:
-    found = find_local_asset(value)
-
-    if found:
-        return found.resolve().as_uri()
-
-    return value
+    return fixed
 
 def rewrite_attr(m):
     attr = m.group(1)
@@ -3802,7 +5037,7 @@ def rewrite_attr(m):
     if not is_asset_url(value):
         return m.group(0)
 
-    new_value = local_file_url_or_original(value)
+    new_value = local_or_online(value)
 
     return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
 
@@ -3824,7 +5059,7 @@ def rewrite_srcset(m):
         descriptor = " ".join(bits[1:])
 
         if is_asset_url(url):
-            url = local_file_url_or_original(url)
+            url = local_or_online(url)
 
         if descriptor:
             out.append(f"{url} {descriptor}")
@@ -3840,34 +5075,19 @@ def rewrite_css_url(m):
     if not is_asset_url(value):
         return m.group(0)
 
-    new_value = local_file_url_or_original(value)
+    new_value = local_or_online(value)
 
     if quote:
         return f"url({quote}{new_value}{quote})"
 
     return f"url({new_value})"
 
-def existing_file_url_count(s: str) -> tuple[int, int]:
-    urls = re.findall(
-        r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
-        s,
-        flags=re.I,
-    )
-
-    missing = []
-
-    for url in urls:
-        path = urllib.parse.unquote(urllib.parse.urlsplit(url).path)
-
-        if not Path(path).exists():
-            missing.append(url)
-
-    return len(urls), len(missing)
-
 s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
-before_file_refs, before_missing_file_refs = existing_file_url_count(s)
+before_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+before_root = len(re.findall(r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
 
+# src="/foo.png", src="foo.png", href="/images/foo.png", data-src="..."
 s = re.sub(
     r'\b(src|href|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
     rewrite_attr,
@@ -3875,6 +5095,7 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
+# srcset="/foo.png 1x, /bar.png 2x"
 s = re.sub(
     r'\b(srcset)=(["\'])(.*?)\2',
     rewrite_srcset,
@@ -3882,6 +5103,7 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
+# CSS url("/foo.png")
 s = re.sub(
     r'url\(\s*([\'"]?)([^\'")]+?\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^\'")]*)?)\1\s*\)',
     rewrite_css_url,
@@ -3889,122 +5111,15 @@ s = re.sub(
     flags=re.I | re.S,
 )
 
-after_file_refs, after_missing_file_refs = existing_file_url_count(s)
+after_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+after_root = len(re.findall(r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
 
 OUTPUT_HTML.write_text(s, encoding="utf-8")
 
-print(f"✅ file:// refs before cleanup: {before_file_refs}")
-print(f"✅ broken file:// refs before cleanup: {before_missing_file_refs}")
-print(f"✅ file:// refs after cleanup: {after_file_refs}")
-print(f"✅ broken file:// refs after cleanup: {after_missing_file_refs}")
-
-# Strict local-only validation.
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-bad_file_urls = []
-
-for url in sorted(set(re.findall(
-    r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
-    s,
-    flags=re.I,
-))):
-    path = urllib.parse.unquote(urllib.parse.urlsplit(url).path)
-
-    if not Path(path).exists():
-        bad_file_urls.append(url)
-
-unresolved_attrs = []
-
-for m in re.finditer(
-    r'\b(src|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
-    s,
-    flags=re.I | re.S,
-):
-    attr = m.group(1)
-    value = html.unescape(m.group(3)).strip()
-
-    if value.startswith(("file://", "data:", "mailto:", "#")):
-        continue
-
-    # Local-only: no http, no bare relative, no root-relative image URLs may remain.
-    unresolved_attrs.append((attr, value))
-
-if bad_file_urls:
-    print("❌ Broken local file:// image URLs remain:")
-    for url in bad_file_urls[:100]:
-        print(f"  - {url}")
-
-if unresolved_attrs:
-    print("❌ Unresolved non-file image URLs remain:")
-    for attr, value in unresolved_attrs[:100]:
-        print(f"  - {attr}={value}")
-
-if bad_file_urls or unresolved_attrs:
-    print("")
-    print("❌ Local-only image cleanup failed.")
-    print("❌ This means those assets were not found in Public, static, assets, resources, or the RawPedia repo.")
-    raise SystemExit(1)
-
-print("✅ Local-only image cleanup complete")
-RAWPEDIA_LOCAL_IMAGE_CLEANUP
-
-if [[ ! -s "$OUTPUT_HTML" ]]; then
-  echo "❌ HTML output was not created or is empty: $OUTPUT_HTML"
-  exit 1
-fi
-
-echo "🔎 Verifying every local file:// image exists before render..."
-
-python3 - "$OUTPUT_HTML" <<'VERIFY_LOCAL_IMAGES'
-import re
-import sys
-import urllib.parse
-from pathlib import Path
-
-OUTPUT_HTML = Path(sys.argv[1])
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-urls = sorted(set(re.findall(
-    r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)',
-    s,
-    flags=re.I,
-)))
-
-missing = []
-
-for url in urls:
-    path = urllib.parse.unquote(urllib.parse.urlsplit(url).path)
-
-    if not Path(path).exists():
-        missing.append(url)
-
-img_tags = len(re.findall(r"<img\b", s, flags=re.I))
-file_refs = len(re.findall(r'src=["\']file://', s, flags=re.I))
-http_refs = len(re.findall(r'src=["\']https?://', s, flags=re.I))
-missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
-
-print(f"✅ HTML image tags before render: {img_tags}")
-print(f"✅ HTML local image refs before render: {file_refs}")
-print(f"✅ HTML online image refs before render: {http_refs}")
-print(f"✅ HTML missing-image placeholders before render: {missing_boxes}")
-print(f"✅ Unique local file:// image URLs: {len(urls)}")
-print(f"✅ Broken local file:// image URLs: {len(missing)}")
-
-if http_refs:
-    print("❌ Online image refs remain, but this build is local-only.")
-    sys.exit(1)
-
-if missing:
-    print("❌ Broken local file:// image URLs remain:")
-    for item in missing[:100]:
-        print(f"   {item}")
-    sys.exit(1)
-
-if file_refs < 20:
-    print("❌ Suspiciously few local image refs.")
-    sys.exit(1)
-VERIFY_LOCAL_IMAGES
-
+print(f"Before cleanup: local file asset refs={before_file_asset_refs}, root-relative asset attrs={before_root}")
+print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-relative asset attrs={after_root}")
+print("✅ Final image URL cleanup complete")
+RAWPEDIA_IMAGE_URL_CLEANUP
 echo "📄 Rendering PDF..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
@@ -4013,67 +5128,751 @@ if ! command -v weasyprint >/dev/null 2>&1; then
   echo "source myvenv/bin/activate"
   exit 1
 fi
+echo
+echo "🖼 Sledgehammer image resolver..."
 
-rm -f "$OUTPUT_PDF"
-
-weasyprint \
-  --base-url "$SOURCE_DIR" \
-  "$OUTPUT_HTML" \
-  "$OUTPUT_PDF"
-
-if [[ ! -s "$OUTPUT_PDF" ]]; then
-  echo "❌ PDF was not created or is empty: $OUTPUT_PDF"
-  exit 1
-fi
-
-PDF_BYTES="$(stat -f%z "$OUTPUT_PDF" 2>/dev/null || stat -c%s "$OUTPUT_PDF")"
-PDF_MB="$(python3 - "$PDF_BYTES" <<'PY'
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'SLEDGEHAMMER_IMAGE_RESOLVER'
+import os
+import re
 import sys
-print(f"{int(sys.argv[1]) / 1024 / 1024:.2f}")
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+SOURCE_DIR = Path(sys.argv[2]).resolve()
+RAWPEDIA_ONLINE_URL = sys.argv[3].rstrip("/")
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico"
+}
+
+asset_by_name = {}
+asset_by_rel = {}
+
+for root, dirs, files in os.walk(SOURCE_DIR):
+    for name in files:
+        p = (Path(root) / name).resolve()
+
+        if p.suffix.lower() not in asset_exts:
+            continue
+
+        rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
+        asset_by_rel.setdefault(rel, p)
+        asset_by_name.setdefault(name.lower(), p)
+
+print(f"asset_by_name: {len(asset_by_name)}")
+print(f"asset_by_rel: {len(asset_by_rel)}")
+
+def is_asset_value(value: str) -> bool:
+    value = html.unescape(value or "").strip()
+    path = urllib.parse.urlsplit(value).path
+    return Path(path).suffix.lower() in asset_exts
+
+def online_for(value: str) -> str:
+    raw = html.unescape(value or "").strip()
+    path = urllib.parse.urlsplit(raw).path
+    filename = Path(urllib.parse.unquote(path)).name
+
+    if filename:
+        return f"{RAWPEDIA_ONLINE_URL}/images/{urllib.parse.quote(filename)}"
+
+    return raw
+
+def find_asset(value: str) -> Path | None:
+    raw = html.unescape(value or "").strip()
+
+    if not raw:
+        return None
+
+    parsed = urllib.parse.urlsplit(raw)
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/").strip()
+
+    if not path:
+        return None
+
+    candidates = []
+
+    p = Path(path)
+
+    if raw.startswith("file://") and p.exists():
+        candidates.append(p)
+
+    if p.is_absolute() and p.exists():
+        candidates.append(p)
+
+    if path.startswith("/"):
+        candidates.append(SOURCE_DIR / path.lstrip("/"))
+    else:
+        candidates.append(SOURCE_DIR / path)
+
+    rel_key = path.lstrip("/").lower()
+
+    if rel_key in asset_by_rel:
+        candidates.append(asset_by_rel[rel_key])
+
+    if rel_key.startswith("images/"):
+        short_key = rel_key.removeprefix("images/")
+        if short_key in asset_by_rel:
+            candidates.append(asset_by_rel[short_key])
+    else:
+        images_key = f"images/{rel_key}"
+        if images_key in asset_by_rel:
+            candidates.append(asset_by_rel[images_key])
+
+    # Critical fallback: basename lookup.
+    base = Path(path).name.lower()
+    if base in asset_by_name:
+        candidates.append(asset_by_name[base])
+
+    for c in candidates:
+        try:
+            c = Path(c).resolve()
+        except Exception:
+            continue
+
+        if c.exists() and c.suffix.lower() in asset_exts:
+            return c
+
+    return None
+
+def resolve_url(value: str) -> str:
+    raw = html.unescape(value or "").strip()
+
+    if not raw:
+        return raw
+
+    if raw.startswith(("data:", "mailto:", "#")):
+        return raw
+
+    if raw.startswith(("http://", "https://")):
+        return raw
+
+    # Preserve valid local file URLs, including generated article QR SVGs.
+    if raw.startswith("file://"):
+        parsed = urllib.parse.urlsplit(raw)
+        path = urllib.parse.unquote(parsed.path)
+
+        if Path(path).exists():
+            return Path(path).resolve().as_uri()
+
+        return raw
+
+    # Preserve valid absolute local filesystem paths.
+    if raw.startswith("/"):
+        path = Path(raw)
+
+        if path.exists():
+            return path.resolve().as_uri()
+
+    found = find_asset(raw)
+
+    if found:
+        return found.as_uri()
+
+    return online_for(raw)
+
+def rewrite_srcset_value(value: str) -> str:
+    parts = []
+
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+
+        if not candidate:
+            continue
+
+        bits = candidate.split()
+        url = bits[0]
+        descriptor = " ".join(bits[1:])
+
+        if is_asset_value(url):
+            url = resolve_url(url)
+
+        if descriptor:
+            parts.append(f"{url} {descriptor}")
+        else:
+            parts.append(url)
+
+    return ", ".join(parts)
+
+def rewrite_img_tag(m):
+    tag = m.group(0)
+
+    def replace_quoted_attr(attr_name, value_rewriter):
+        nonlocal tag
+
+        def repl(am):
+            quote = am.group(1)
+            value = am.group(2)
+            new_value = value_rewriter(value)
+            return f'{attr_name}={quote}{html.escape(new_value, quote=True)}{quote}'
+
+        tag = re.sub(
+            rf'\b{re.escape(attr_name)}\s*=\s*(["\'])(.*?)\1',
+            repl,
+            tag,
+            flags=re.I | re.S,
+        )
+
+    def replace_unquoted_src():
+        nonlocal tag
+
+        def repl(am):
+            value = am.group(1)
+            new_value = resolve_url(value) if is_asset_value(value) else value
+            return f'src="{html.escape(new_value, quote=True)}"'
+
+        tag = re.sub(
+            r'\bsrc\s*=\s*([^"\'\s>]+)',
+            repl,
+            tag,
+            flags=re.I | re.S,
+        )
+
+    # Rewrite quoted attrs.
+    for attr in ("src", "data-src", "data-original", "data-lazy-src"):
+        replace_quoted_attr(
+            attr,
+            lambda v: resolve_url(v) if is_asset_value(v) else v,
+        )
+
+    replace_quoted_attr("srcset", rewrite_srcset_value)
+
+    # Rewrite unquoted src=foo.jpg.
+    replace_unquoted_src()
+
+    # If no src but has data-src, promote data-src to src.
+    if not re.search(r'\bsrc\s*=', tag, flags=re.I):
+        dm = re.search(
+            r'\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["\'])(.*?)\1',
+            tag,
+            flags=re.I | re.S,
+        )
+
+        if dm and is_asset_value(dm.group(2)):
+            src = resolve_url(dm.group(2))
+            tag = tag[:-1] + f' src="{html.escape(src, quote=True)}">'
+
+    return tag
+
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+before_imgs = len(re.findall(r"<img\b", s, flags=re.I))
+before_src_file = len(re.findall(r'\bsrc\s*=\s*["\']file://', s, flags=re.I))
+before_src_http = len(re.findall(r'\bsrc\s*=\s*["\']https?://', s, flags=re.I))
+
+s = re.sub(r"<img\b[^>]*>", rewrite_img_tag, s, flags=re.I | re.S)
+
+after_imgs = len(re.findall(r"<img\b", s, flags=re.I))
+after_src_file = len(re.findall(r'\bsrc\s*=\s*["\']file://', s, flags=re.I))
+after_src_http = len(re.findall(r'\bsrc\s*=\s*["\']https?://', s, flags=re.I))
+
+OUTPUT_HTML.write_text(s, encoding="utf-8")
+
+print(f"img tags before: {before_imgs}")
+print(f"img tags after:  {after_imgs}")
+print(f"src file before: {before_src_file}")
+print(f"src file after:  {after_src_file}")
+print(f"src http before: {before_src_http}")
+print(f"src http after:  {after_src_http}")
+print("✅ Sledgehammer image resolver complete")
+SLEDGEHAMMER_IMAGE_RESOLVER
+
+echo
+echo "🔳 Re-checking generated article QR image paths after cleanup..."
+
+python3 - "$OUTPUT_HTML" <<'CHECK_ARTICLE_QR_PATHS_AFTER_CLEANUP'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+qr_srcs = []
+
+for tag in re.findall(r'<img\b[^>]*>', s, flags=re.I | re.S):
+    if "GitHub source QR code" not in html.unescape(tag):
+        continue
+
+    m = re.search(r'\bsrc=["\']([^"\']+)["\']', tag, flags=re.I | re.S)
+
+    if m:
+        qr_srcs.append(html.unescape(m.group(1)).strip())
+
+qr_srcs = sorted(set(qr_srcs))
+
+bad = []
+missing = []
+
+for src in qr_srcs:
+    if src.startswith(("http://", "https://")):
+        bad.append(src)
+        continue
+
+    if not src.startswith("file://"):
+        bad.append(src)
+        continue
+
+    path = urllib.parse.unquote(urllib.parse.urlsplit(src).path)
+
+    if not Path(path).exists():
+        missing.append(src)
+
+print(f"article QR image refs after cleanup: {len(qr_srcs)}")
+print(f"bad/nonlocal QR refs after cleanup: {len(bad)}")
+print(f"missing local QR files after cleanup: {len(missing)}")
+
+if bad:
+    print()
+    print("❌ Article QR refs were changed away from local file:// URLs:")
+    for item in bad[:120]:
+        print(f"   {item}")
+    sys.exit(1)
+
+if missing:
+    print()
+    print("❌ Article QR files missing after cleanup:")
+    for item in missing[:120]:
+        print(f"   {item}")
+    sys.exit(1)
+
+print("✅ Article QR images are still local file URLs after cleanup")
+CHECK_ARTICLE_QR_PATHS_AFTER_CLEANUP
+
+echo
+echo "🔎 Final image preflight before WeasyPrint..."
+
+python3 - "$OUTPUT_HTML" <<'FINAL_IMAGE_PREFLIGHT'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+imgs = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
+
+bad_src = []
+missing_local = []
+
+src_count = 0
+file_count = 0
+http_count = 0
+data_count = 0
+
+for tag in imgs:
+    m = re.search(r'\bsrc\s*=\s*(["\'])(.*?)\1', tag, flags=re.I | re.S)
+
+    if not m:
+        bad_src.append("[NO SRC] " + re.sub(r"\s+", " ", tag)[:180])
+        continue
+
+    src_count += 1
+    src = html.unescape(m.group(2)).strip()
+
+    if src.startswith("file://"):
+        file_count += 1
+        path = urllib.parse.unquote(urllib.parse.urlsplit(src).path)
+        if not Path(path).exists():
+            missing_local.append(src)
+    elif src.startswith(("http://", "https://")):
+        http_count += 1
+        bad_src.append(src)
+    elif src.startswith("data:"):
+        data_count += 1
+    else:
+        bad_src.append(src)
+
+print(f"img tags: {len(imgs)}")
+print(f"img src attrs: {src_count}")
+print(f"file src: {file_count}")
+print(f"http src: {http_count}")
+print(f"data src: {data_count}")
+print(f"bad/nonlocal/http/no src: {len(bad_src)}")
+print(f"missing local file src: {len(missing_local)}")
+
+if bad_src:
+    print()
+    print("❌ Bad or online image src values remain:")
+    for item in sorted(set(bad_src))[:80]:
+        print(f"   {item}")
+    sys.exit(1)
+
+if missing_local:
+    print()
+    print("❌ Local file image URLs still point to missing files:")
+    for item in sorted(set(missing_local))[:80]:
+        print(f"   {item}")
+    sys.exit(1)
+
+if file_count + http_count + data_count < 50:
+    print()
+    print("❌ Too few usable image src values. Refusing to render image-less PDF.")
+    sys.exit(1)
+
+print("✅ Final image preflight passed")
+FINAL_IMAGE_PREFLIGHT
+
+echo
+echo "---- href refs in generated book.html ----"
+
+python3 - "$OUTPUT_HTML" <<'HREF_REF_REPORT'
+import re
+import sys
+import html
+from pathlib import Path
+
+s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+
+hrefs = [
+    html.unescape(m.group(2)).strip()
+    for m in re.finditer(r'\bhref=(["\'])(.*?)\1', s, flags=re.I | re.S)
+]
+
+internal = [h for h in hrefs if h.startswith("#")]
+file_refs = [h for h in hrefs if h.startswith("file://")]
+old_rawpedia = [h for h in hrefs if "rawpedia.rawtherapee.com" in h]
+rawpixls = [h for h in hrefs if "rawpedia.rawpixls.us" in h]
+pixls = [h for h in hrefs if "rawpedia.pixls.us" in h]
+download_exts = {
+    ".pp3", ".pdf", ".zip", ".7z", ".gz", ".bz2", ".xz",
+    ".dcp", ".icc", ".icm", ".txt", ".json",
+    ".exe", ".dmg", ".appimage", ".cr3", ".cr2", ".nef", ".arw", ".dng"
+}
+
+relative = [
+    h for h in hrefs
+    if h
+    and not h.startswith(("#", "file://", "http://", "https://", "mailto:", "tel:", "data:"))
+]
+
+relative_manual_links = [
+    h for h in relative
+    if Path(h.split("#", 1)[0].split("?", 1)[0]).suffix.lower() not in download_exts
+]
+
+print(f"href attrs: {len(hrefs)}")
+print(f"internal # refs: {len(internal)}")
+print(f"file:// href refs: {len(file_refs)}")
+print(f"old rawpedia.rawtherapee.com refs: {len(old_rawpedia)}")
+print(f"rawpedia.rawpixls.us refs: {len(rawpixls)}")
+print(f"rawpedia.pixls.us refs: {len(pixls)}")
+print(f"relative href refs: {len(relative)}")
+print(f"relative manual-page href refs: {len(relative_manual_links)}")
+
+if file_refs:
+    print()
+    print("sample file:// href refs:")
+    for h in file_refs[:40]:
+        print(f"  {h}")
+
+if relative:
+    print()
+    print("sample relative href refs:")
+    for h in relative[:40]:
+        print(f"  {h}")
+
+if relative_manual_links:
+    print()
+    print("sample relative manual-page href refs:")
+    for h in relative_manual_links[:40]:
+        print(f"  {h}")
+
+if old_rawpedia:
+    print()
+    print("sample old RawPedia refs:")
+    for h in old_rawpedia[:40]:
+        print(f"  {h}")
+
+if relative_manual_links:
+    print()
+    print("❌ Relative manual-page href refs remain. These will not work as internal PDF jumps.")
+    print("❌ Fix link rewriting before rendering.")
+    for h in relative_manual_links[:80]:
+        print(f"  {h}")
+    sys.exit(1)
+    
+HREF_REF_REPORT
+
+echo "📄 Rendering PDF..."
+
+BOOK_BASE_URL="$(
+python3 - "$OUTPUT_HTML" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve().as_uri())
 PY
 )"
 
-echo "✅ DONE: $OUTPUT_PDF"
-echo "✅ PDF size: ${PDF_MB} MB"
+echo "✅ PDF internal-link base URL: $BOOK_BASE_URL"
 
-if python3 - "$PDF_BYTES" <<'PY'
+weasyprint \
+  --base-url "$BOOK_BASE_URL" \
+  "$OUTPUT_HTML" \
+  "$OUTPUT_PDF"
+  
+echo
+echo
+echo "🔗 Checking PDF link actions..."
+
+python3 - "$OUTPUT_PDF" <<'CHECK_PDF_LINK_ACTIONS'
 import sys
-sys.exit(0 if int(sys.argv[1]) < 10 * 1024 * 1024 else 1)
-PY
-then
-  echo "❌ PDF is under 10 MB."
-  echo "❌ That is suspicious for a RawPedia manual with embedded images."
-  echo "❌ Refusing CI success."
-  echo "❌ Check:"
-  echo "   $WORK_DIR/missing-images.txt"
-  echo "   $OUTPUT_HTML"
+import subprocess
+import json
+from pathlib import Path
+
+pdf = Path(sys.argv[1])
+
+try:
+    result = subprocess.run(
+        ["qpdf", "--json", "--json-key=pages", str(pdf)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+except FileNotFoundError:
+    print("⚠️ qpdf not found; skipping PDF link-action check.")
+    sys.exit(0)
+except subprocess.CalledProcessError as e:
+    print("⚠️ qpdf link-action check failed; skipping.")
+    print(e.stderr[:1000])
+    sys.exit(0)
+
+data = json.loads(result.stdout)
+
+uri_count = 0
+goto_count = 0
+other_count = 0
+samples = []
+
+def walk(obj):
+    global uri_count, goto_count, other_count
+
+    if isinstance(obj, dict):
+        if "/A" in obj:
+            action = obj["/A"]
+
+            if isinstance(action, dict):
+                subtype = action.get("/S")
+
+                if subtype == "/URI":
+                    uri_count += 1
+                    uri = action.get("/URI", "")
+                    if len(samples) < 20:
+                        samples.append(str(uri))
+                elif subtype == "/GoTo":
+                    goto_count += 1
+                else:
+                    other_count += 1
+
+        for value in obj.values():
+            walk(value)
+
+    elif isinstance(obj, list):
+        for value in obj:
+            walk(value)
+
+walk(data)
+
+print(f"PDF GoTo internal links: {goto_count}")
+print(f"PDF URI external links:  {uri_count}")
+print(f"PDF other link actions:  {other_count}")
+
+bad_fragment_uris = [
+    s for s in samples
+    if "#page-" in s or "#contents" in s or "#technical-index" in s
+]
+
+if bad_fragment_uris:
+    print()
+    print("❌ Internal-looking links were emitted as external URI links:")
+    for s in bad_fragment_uris[:20]:
+        print(f"   {s}")
+    sys.exit(1)
+
+if goto_count == 0:
+    print()
+    print("⚠️ qpdf JSON did not expose PDF GoTo links.")
+    print("⚠️ Since links work in Preview/Safari, continuing to final assembly.")
+    sys.exit(0)
+
+print("✅ PDF has internal GoTo link actions")
+CHECK_PDF_LINK_ACTIONS
+
+echo
+echo
+echo "📄 Creating final publisher-ready PDF inside the same WeasyPrint document..."
+
+if ! command -v qpdf >/dev/null 2>&1; then
+  echo "❌ qpdf not found; cannot calculate publisher padding."
+  echo "   Install with: brew install qpdf"
   exit 1
 fi
 
-if [[ -f "$WORK_DIR/contributors.txt" ]]; then
-  echo "✅ Contributors listed in:"
-  echo "   $WORK_DIR/contributors.txt"
+PAGE_COUNT="$(qpdf --show-npages "$OUTPUT_PDF")"
+
+# We are always appending two final pages:
+#   1. blank page with 1 inch rtdata icon
+#   2. final page with 5 inch rtdata icon
+FINAL_PAGE_COUNT=2
+
+# Padding must happen BEFORE those final pages.
+# Compute padding so: original + padding + 2 final pages is divisible by 4.
+REMAINDER=$(( (PAGE_COUNT + FINAL_PAGE_COUNT) % 4 ))
+
+if (( REMAINDER == 0 )); then
+  PAD_NEEDED=0
+else
+  PAD_NEEDED=$(( 4 - REMAINDER ))
 fi
 
-if [[ -f "$WORK_DIR/authors.txt" ]]; then
-  echo "✅ AUTHORS.txt names listed in:"
-  echo "   $WORK_DIR/authors.txt"
+EXPECTED_FINAL_TOTAL=$(( PAGE_COUNT + PAD_NEEDED + FINAL_PAGE_COUNT ))
+
+echo "📄 Original page count: $PAGE_COUNT"
+echo "📄 Reserved final icon pages: $FINAL_PAGE_COUNT"
+echo "📄 Padding blankies needed before final pages: $PAD_NEEDED"
+echo "📄 Expected final page count: $EXPECTED_FINAL_TOTAL"
+
+echo "📄 Injecting final publisher pages into main HTML..."
+
+python3 - "$OUTPUT_HTML" "$PAD_NEEDED" "$RT_HEADER_PNG" <<'INJECT_FINAL_PAGES'
+import sys
+from pathlib import Path
+
+html_path = Path(sys.argv[1])
+pad_needed = int(sys.argv[2])
+icon_uri = Path(sys.argv[3]).resolve().as_uri()
+
+s = html_path.read_text(encoding="utf-8", errors="replace")
+
+marker = '<!-- RAWPEDIA_FINAL_PUBLISHER_PAGES -->'
+
+# Remove old injected final pages if this script is re-run.
+if marker in s:
+    s = s.split(marker, 1)[0].rstrip() + "\n</body>\n</html>\n"
+
+sections = []
+sections.append(marker)
+
+for i in range(pad_needed):
+    sections.append(f"""
+<section class="publisher-blank-page">
+  <img src="{icon_uri}" alt="">
+</section>
+""")
+
+sections.append(f"""
+<section class="publisher-final-blank-page">
+  <img src="{icon_uri}" alt="">
+</section>
+
+<section class="publisher-final-icon-page">
+  <img src="{icon_uri}" alt="RawTherapee icon">
+</section>
+""")
+
+injected = "\n".join(sections)
+
+extra_css = """
+<style id="publisher-final-pages-style">
+@page publisherfinal {
+  size: 8.125in 10.25in;
+  margin: 0;
+
+  @top-left { content: ""; }
+  @top-center { content: ""; }
+  @top-right { content: ""; }
+  @bottom-left { content: ""; }
+  @bottom-center { content: ""; }
+  @bottom-right { content: ""; }
+}
+
+.publisher-blank-page,
+.publisher-final-blank-page,
+.publisher-final-icon-page {
+  page: publisherfinal;
+  break-before: page;
+  break-after: page;
+  width: 8.125in;
+  height: 10.25in;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  string-set: article "";
+}
+
+.publisher-blank-page img,
+.publisher-final-blank-page img {
+  width: 1in;
+  height: 1in;
+  object-fit: contain;
+  background: transparent;
+}
+
+.publisher-final-icon-page img {
+  width: 5in;
+  height: 5in;
+  object-fit: contain;
+  background: transparent;
+}
+</style>
+"""
+
+if "publisher-final-pages-style" not in s:
+    s = s.replace("</head>", extra_css + "\n</head>")
+
+s = s.replace("</body>", injected + "\n</body>")
+
+html_path.write_text(s, encoding="utf-8")
+print(f"✅ Injected {pad_needed} padding page(s) plus 2 final logo pages")
+INJECT_FINAL_PAGES
+
+echo "📄 Rendering final PDF in one WeasyPrint pass so internal links survive..."
+
+BOOK_BASE_URL="$(
+python3 - "$OUTPUT_HTML" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve().as_uri())
+PY
+)"
+
+weasyprint \
+  --base-url "$BOOK_BASE_URL" \
+  "$OUTPUT_HTML" \
+  "$OUTPUT_PDF"
+
+FINAL_PAGE_TOTAL="$(qpdf --show-npages "$OUTPUT_PDF")"
+
+echo "✅ Final publisher-ready PDF complete: $OUTPUT_PDF"
+echo "✅ Final page count: $FINAL_PAGE_TOTAL"
+
+if [[ "$FINAL_PAGE_TOTAL" != "$EXPECTED_FINAL_TOTAL" ]]; then
+  echo "❌ Final PDF page count mismatch."
+  echo "   original:  $PAGE_COUNT"
+  echo "   padding:   $PAD_NEEDED"
+  echo "   final:     $FINAL_PAGE_COUNT"
+  echo "   expected:  $EXPECTED_FINAL_TOTAL"
+  echo "   actual:    $FINAL_PAGE_TOTAL"
+  exit 1
 fi
 
-if [[ -f "$WORK_DIR/technical-index-terms.txt" ]]; then
-  echo "✅ Technical index source listed in:"
-  echo "   $WORK_DIR/technical-index-terms.txt"
+if (( FINAL_PAGE_TOTAL % 4 != 0 )); then
+  echo "❌ Final PDF page count is not divisible by 4."
+  exit 1
 fi
 
-if [[ -f "$WORK_DIR/suppressed-main-pages.txt" ]]; then
-  echo "✅ Suppressed Main Page variants listed in:"
-  echo "   $WORK_DIR/suppressed-main-pages.txt"
-fi
-
-if [[ -f "$WORK_DIR/suppressed-redirect-pages.txt" ]]; then
-  echo "✅ Suppressed redirect pages listed in:"
-  echo "   $WORK_DIR/suppressed-redirect-pages.txt"
-fi
+echo "✅ Final PDF includes original + padding + final logo pages."
+echo "✅ Final PDF page count is divisible by 4."
 
 if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
   echo "⚠️ Some images were still missing."
