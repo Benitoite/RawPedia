@@ -271,21 +271,21 @@ jobs:
           python3 - "$SOURCE_DIR" <<'PY'
           import sys
           from pathlib import Path
-          
+
           source = Path(sys.argv[1])
           files = sorted(source.rglob("*.html"))
-          
+
           for p in files[:120]:
               print(p)
           PY
 
           chmod +x "${{ inputs.script_path }}"
 
-          if ! "${{ inputs.script_path }}"; then
-          echo "❌ Manual build failed."
-          echo
-          
-          set +o pipefail
+          if ! "./${{ inputs.script_path }}"; then
+            echo "❌ Manual build failed."
+            echo
+
+            set +o pipefail
 
             echo "---- workspace root ----"
             ls -la || true
@@ -295,88 +295,87 @@ jobs:
             ls -la rawpedia_book || true
 
             echo
-            echo "---- pages-all.txt ----"
-            head -160 rawpedia_book/pages-all.txt 2>/dev/null || true
+            echo "---- diagnostics ----"
+            python3 - <<'PY' || true
+          from pathlib import Path
+          import re
 
-            echo
-            echo "---- article GitHub source map ----"
-            head -260 rawpedia_book/article-github-source-map.txt 2>/dev/null || true
+          def show_file(path, max_lines=160):
+              p = Path(path)
+              print()
+              print(f"---- {path} ----")
+              if not p.exists():
+                  print("[missing]")
+                  return
 
-            echo
-            echo "---- redirect route map ----"
-            head -260 rawpedia_book/redirect-route-map.txt 2>/dev/null || true
+              try:
+                  lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+              except Exception as e:
+                  print(f"[could not read: {e}]")
+                  return
 
-            echo
-            echo "---- suppressed-redirect-pages.txt ----"
-            cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
+              for line in lines[:max_lines]:
+                  print(line)
 
-            echo
-            echo "---- suppressed-main-pages.txt ----"
-            cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
+              if len(lines) > max_lines:
+                  print(f"... [{len(lines) - max_lines} more lines]")
 
-            echo
-            echo "---- contributors.txt ----"
-            head -120 rawpedia_book/contributors.txt 2>/dev/null || true
+          show_file("rawpedia_book/pages-all.txt", 160)
+          show_file("rawpedia_book/article-github-source-map.txt", 260)
+          show_file("rawpedia_book/redirect-route-map.txt", 260)
+          show_file("rawpedia_book/suppressed-redirect-pages.txt", 200)
+          show_file("rawpedia_book/suppressed-main-pages.txt", 200)
+          show_file("rawpedia_book/contributors.txt", 120)
+          show_file("rawpedia_book/authors.txt", 120)
+          show_file("rawpedia_book/technical-index-terms.txt", 220)
+          show_file("rawpedia_book/missing-images.txt", 220)
 
-            echo
-            echo "---- authors.txt ----"
-            head -120 rawpedia_book/authors.txt 2>/dev/null || true
+          book = Path("rawpedia_book/book.html")
 
-            echo
-            echo "---- technical-index-terms.txt ----"
-            head -220 rawpedia_book/technical-index-terms.txt 2>/dev/null || true
+          print()
+          print("---- image/link refs in generated book.html ----")
 
-            echo
-            echo "---- image refs in generated book.html ----"
-            if [[ -f rawpedia_book/book.html ]]; then
-              echo "img tags:"
-              grep -c '<img\b' rawpedia_book/book.html || true
+          if not book.exists():
+              print("[rawpedia_book/book.html missing]")
+              raise SystemExit
 
-              echo "src file refs:"
-              grep -Eo 'src=["'\'']file://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
-              echo
+          s = book.read_text(encoding="utf-8", errors="replace")
 
-              echo "src http refs:"
-              grep -Eo 'src=["'\'']https?://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
-              echo
+          print(f"img tags: {len(re.findall(r'<img\\b', s, flags=re.I))}")
+          print(f"src file refs: {len(re.findall(r'src=[\"\\']file://', s, flags=re.I))}")
+          print(f"src http refs: {len(re.findall(r'src=[\"\\']https?://', s, flags=re.I))}")
+          print(f"href internal refs: {len(re.findall(r'href=[\"\\']#', s, flags=re.I))}")
+          print(f"href github refs: {len(re.findall(r'https://github\\.com/RawTherapee/RawPedia', s))}")
+          print(f"missing-image boxes: {len(re.findall(r'class=[\"\\']missing-image[\"\\']', s, flags=re.I))}")
 
-              echo "href internal refs:"
-              grep -Eo 'href=["'\'']#[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
-              echo
+          print()
+          print("sample unresolved image attrs:")
+          image_attrs = re.findall(
+              r'(?:src|data-src|data-original|data-lazy-src)=["\\']([^"\\']+\\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\\?[^"\\']*)?)["\\']',
+              s,
+              flags=re.I,
+          )
+          unresolved = [
+              x for x in image_attrs
+              if not x.startswith("file://") and not x.startswith("data:")
+          ]
 
-              echo "href github refs:"
-              grep -Eo 'href=["'\'']https://github.com/RawTherapee/RawPedia[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
-              echo
+          for item in unresolved[:100]:
+              print(item)
 
-              echo "missing-image boxes:"
-              grep -c 'class=["'\'']missing-image["'\'']' rawpedia_book/book.html || true
+          print()
+          print("sample github QR hrefs:")
+          github_hits = re.findall(
+              r'https://github\\.com/RawTherapee/RawPedia[^"\\'< ]+',
+              s,
+          )
 
-              echo
-              echo "sample unresolved image attrs:"
-              grep -Eo '(src|data-src|data-original|data-lazy-src)=["'\''][^"'\'']+\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?[^"'\'']*)?["'\'']' rawpedia_book/book.html \
-                | grep -v 'file://' \
-                | head -100 || true
-              
-              echo
-              echo "sample github QR hrefs:"
-              python3 - <<'PY' || true
-              import re
-              from pathlib import Path
-              
-              p = Path("rawpedia_book/book.html")
-              
-              if p.exists():
-                  s = p.read_text(encoding="utf-8", errors="replace")
-                  hits = re.findall(r'https://github\.com/RawTherapee/RawPedia[^"\'< ]+', s)
-                  for hit in hits[:100]:
-                      print(hit)
-              PY
-              fi
+          for item in github_hits[:100]:
+              print(item)
+          PY
 
-            echo
-            echo "---- missing-images.txt ----"
-            cat rawpedia_book/missing-images.txt 2>/dev/null || true
             set -o pipefail
+
             exit 1
           fi
 
