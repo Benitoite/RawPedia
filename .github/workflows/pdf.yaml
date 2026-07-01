@@ -341,12 +341,19 @@ jobs:
 
           s = book.read_text(encoding="utf-8", errors="replace")
 
-          print(f"img tags: {len(re.findall(r'<img\\b', s, flags=re.I))}")
-          print(f"src file refs: {len(re.findall(r'src=[\"\\']file://', s, flags=re.I))}")
-          print(f"src http refs: {len(re.findall(r'src=[\"\\']https?://', s, flags=re.I))}")
-          print(f"href internal refs: {len(re.findall(r'href=[\"\\']#', s, flags=re.I))}")
-          print(f"href github refs: {len(re.findall(r'https://github\\.com/RawTherapee/RawPedia', s))}")
-          print(f"missing-image boxes: {len(re.findall(r'class=[\"\\']missing-image[\"\\']', s, flags=re.I))}")
+          img_tags = len(re.findall(r"<img\b", s, flags=re.I))
+          src_file_refs = len(re.findall(r'''src=["']file://''', s, flags=re.I))
+          src_http_refs = len(re.findall(r'''src=["']https?://''', s, flags=re.I))
+          href_internal_refs = len(re.findall(r'''href=["']#''', s, flags=re.I))
+          href_github_refs = len(re.findall(r"https://github\.com/RawTherapee/RawPedia", s))
+          missing_image_boxes = len(re.findall(r'''class=["']missing-image["']''', s, flags=re.I))
+          
+          print(f"img tags: {img_tags}")
+          print(f"src file refs: {src_file_refs}")
+          print(f"src http refs: {src_http_refs}")
+          print(f"href internal refs: {href_internal_refs}")
+          print(f"href github refs: {href_github_refs}")
+          print(f"missing-image boxes: {missing_image_boxes}")
 
           print()
           print("sample unresolved image attrs:")
