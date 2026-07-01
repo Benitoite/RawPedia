@@ -268,13 +268,24 @@ jobs:
           echo "RT_AUTHORS_TXT=$RT_AUTHORS_TXT"
 
           echo "---- HTML files passed to manual script ----"
-          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -120 || true
+          python3 - "$SOURCE_DIR" <<'PY'
+          import sys
+          from pathlib import Path
+          
+          source = Path(sys.argv[1])
+          files = sorted(source.rglob("*.html"))
+          
+          for p in files[:120]:
+              print(p)
+          PY
 
           chmod +x "${{ inputs.script_path }}"
 
           if ! "${{ inputs.script_path }}"; then
-            echo "❌ Manual build failed."
-            echo
+          echo "❌ Manual build failed."
+          echo
+          
+          set +o pipefail
 
             echo "---- workspace root ----"
             ls -la || true
@@ -345,17 +356,27 @@ jobs:
               grep -Eo '(src|data-src|data-original|data-lazy-src)=["'\''][^"'\'']+\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?[^"'\'']*)?["'\'']' rawpedia_book/book.html \
                 | grep -v 'file://' \
                 | head -100 || true
-
+              
               echo
               echo "sample github QR hrefs:"
-              grep -Eo 'https://github.com/RawTherapee/RawPedia[^"'\''< ]+' rawpedia_book/book.html \
-                | head -100 || true
-            fi
+              python3 - <<'PY' || true
+              import re
+              from pathlib import Path
+              
+              p = Path("rawpedia_book/book.html")
+              
+              if p.exists():
+                  s = p.read_text(encoding="utf-8", errors="replace")
+                  hits = re.findall(r'https://github\.com/RawTherapee/RawPedia[^"\'< ]+', s)
+                  for hit in hits[:100]:
+                      print(hit)
+              PY
+              fi
 
             echo
             echo "---- missing-images.txt ----"
             cat rawpedia_book/missing-images.txt 2>/dev/null || true
-
+            set -o pipefail
             exit 1
           fi
 
