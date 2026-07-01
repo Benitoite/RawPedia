@@ -5153,8 +5153,6 @@ asset_exts = {
 }
 asset_by_name = {}
 asset_by_rel = {}
-fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
-fallback_dir.mkdir(parents=True, exist_ok=True)
 downloaded_fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
 downloaded_fallback_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5336,10 +5334,22 @@ def resolve_url(value: str) -> str:
                     except Exception as e:
                         print(f"⚠️ RawPedia hosted image not found locally and download failed: {raw}")
                         print(f"   {e}")
+
+                        placeholder_path = downloaded_fallback_dir / f"{Path(filename).stem}-missing.svg"
+                        placeholder_path.write_text(
+                            f'''<svg xmlns="http://www.w3.org/2000/svg" width="900" height="320" viewBox="0 0 900 320">
+  <rect width="900" height="320" fill="#f4f4f4"/>
+  <rect x="12" y="12" width="876" height="296" fill="none" stroke="#999" stroke-width="4" stroke-dasharray="16 10"/>
+  <text x="450" y="135" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="34" fill="#800">Missing image</text>
+  <text x="450" y="190" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" fill="#555">{html.escape(filename)}</text>
+</svg>
+''',
+                            encoding="utf-8",
+                        )
+                        return placeholder_path.resolve().as_uri()
                     else:
                         if fallback_path.exists() and fallback_path.stat().st_size > 0:
-                            return fallback_path.resolve().as_uri()
-                else:
+                            return fallback_path.resolve().as_uri()                else:
                     return fallback_path.resolve().as_uri()
 
             print(f"⚠️ RawPedia hosted image not found locally: {raw}")
