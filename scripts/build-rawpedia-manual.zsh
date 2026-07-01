@@ -3036,9 +3036,8 @@ qr_case_report = OUTPUT_HTML.parent / "article-github-source-map.txt"
 qr_case_lines = []
 
 for info in infos:
-    content_file = find_content_file_for_article_rel(info["rel"])
-    raw_content_file = content_file
-    canonical_content_file = canonicalize_content_file_for_qr(content_file)
+    raw_content_file = find_content_file_for_article_rel(info["rel"])
+    canonical_content_file = canonicalize_content_file_for_qr(raw_content_file)
 
     if canonical_content_file:
         content_rel = str(canonical_content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
@@ -3054,6 +3053,7 @@ for info in infos:
     qr_case_lines.append(f"  source:    {content_rel}")
     qr_case_lines.append(f"  github:    {info['github_url']}")
     qr_case_lines.append("")
+
 qr_case_report.write_text("\n".join(qr_case_lines), encoding="utf-8")
 print(f"✅ Article GitHub source map report: {qr_case_report}")
 
@@ -5139,8 +5139,9 @@ import re
 import sys
 import html
 import urllib.parse
-from pathlib import Path
 import urllib.request
+from pathlib import Path
+
 
 OUTPUT_HTML = Path(sys.argv[1])
 SOURCE_DIR = Path(sys.argv[2]).resolve()
@@ -5152,6 +5153,8 @@ asset_exts = {
 }
 asset_by_name = {}
 asset_by_rel = {}
+fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
+fallback_dir.mkdir(parents=True, exist_ok=True)
 downloaded_fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
 downloaded_fallback_dir.mkdir(parents=True, exist_ok=True)
 
