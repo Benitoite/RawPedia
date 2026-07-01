@@ -778,11 +778,13 @@ PCA
 Game Changer
 """.strip().splitlines()
 
-missing_images = []
-asset_by_name = {}
+
 suppressed_redirects = []
 suppressed_main_pages = []
 all_contributors = set()
+
+missing_images = []
+asset_by_name = {}
 
 for root, dirs, files in os.walk(SOURCE_DIR):
     for name in files:
@@ -5147,20 +5149,63 @@ asset_exts = {
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
     ".tif", ".tiff", ".bmp", ".ico"
 }
-
 asset_by_name = {}
 asset_by_rel = {}
 
-for root, dirs, files in os.walk(SOURCE_DIR):
-    for name in files:
-        p = (Path(root) / name).resolve()
+# GitHub Actions can have RawPedia image assets both in the generated Hugo
+# output and in the checkout source tree. Index both.
+candidate_asset_roots = []
 
-        if p.suffix.lower() not in asset_exts:
-            continue
+for candidate in [
+    SOURCE_DIR,
+    SOURCE_DIR.parent,
+    Path.cwd(),
+    Path.home() / "RawPedia",
+    Path.home() / "RawPedia" / "Public",
+]:
+    try:
+        candidate = candidate.resolve()
+    except Exception:
+        continue
 
-        rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
-        asset_by_rel.setdefault(rel, p)
-        asset_by_name.setdefault(name.lower(), p)
+    if candidate.exists() and candidate.is_dir() and candidate not in candidate_asset_roots:
+        candidate_asset_roots.append(candidate)
+
+print("asset roots:")
+for root in candidate_asset_roots:
+    print(f"  {root}")
+
+for asset_root in candidate_asset_roots:
+    for root, dirs, files in os.walk(asset_root):
+        # Avoid wasting time in huge or irrelevant directories.
+        dirs[:] = [
+            d for d in dirs
+            if d not in {
+                ".git", ".venv", "node_modules", "__pycache__",
+                "repo-rt", "article-qrs",
+            }
+        ]
+
+        for name in files:
+            p = (Path(root) / name).resolve()
+
+            if p.suffix.lower() not in asset_exts:
+                continue
+
+            try:
+                rel = str(p.relative_to(asset_root)).replace("\\", "/").lower()
+            except Exception:
+                rel = p.name.lower()
+
+            asset_by_rel.setdefault(rel, p)
+            asset_by_name.setdefault(name.lower(), p)
+
+            # Also index paths relative to SOURCE_DIR when possible.
+            try:
+                source_rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
+                asset_by_rel.setdefault(source_rel, p)
+            except Exception:
+                pass
 
 print(f"asset_by_name: {len(asset_by_name)}")
 print(f"asset_by_rel: {len(asset_by_rel)}")
@@ -5207,6 +5252,15 @@ def find_asset(value: str) -> Path | None:
     else:
         candidates.append(SOURCE_DIR / path)
 
+    # Common RawPedia hosted URL shape:
+    #   https://rawpedia.pixls.us/images/Foo.jpg
+    # Hugo/source output may place Foo.jpg at root or another asset location.
+    if path.startswith("/images/"):
+        candidates.append(SOURCE_DIR / Path(path).name)
+
+    if "/images/" in path:
+        candidates.append(SOURCE_DIR / Path(path).name)
+
     rel_key = path.lstrip("/").lower()
 
     if rel_key in asset_by_rel:
@@ -5247,6 +5301,25 @@ def resolve_url(value: str) -> str:
         return raw
 
     if raw.startswith(("http://", "https://")):
+        parsed = urllib.parse.urlsplit(raw)
+        host = (parsed.netloc or "").lower()
+
+        # RawPedia-hosted image URLs should be localized when possible.
+        if host in {
+            "rawpedia.pixls.us",
+            "www.rawpedia.pixls.us",
+            "rawpedia.rawtherapee.com",
+            "www.rawpedia.rawtherapee.com",
+            "rawpedia.rawpixls.us",
+            "www.rawpedia.rawpixls.us",
+        }:
+            found = find_asset(raw)
+
+            if found:
+                return found.as_uri()
+
+            print(f"⚠️ RawPedia hosted image not found locally: {raw}")
+
         return raw
 
     # Preserve valid local file URLs, including generated article QR SVGs.
