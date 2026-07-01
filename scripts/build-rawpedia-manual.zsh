@@ -3034,26 +3034,26 @@ manual_link_map = build_manual_link_map(infos)
 qr_case_report = OUTPUT_HTML.parent / "article-github-source-map.txt"
 
 qr_case_lines = []
+
 for info in infos:
     content_file = find_content_file_for_article_rel(info["rel"])
     raw_content_file = content_file
-    content_file = canonicalize_content_file_for_qr(content_file)
+    canonical_content_file = canonicalize_content_file_for_qr(content_file)
 
-if content_file:
-    content_rel = str(content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
-else:
-    content_rel = "[FALLBACK - ACTUAL CASE NOT FOUND]"
+    if canonical_content_file:
+        content_rel = str(canonical_content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
+    else:
+        content_rel = "[FALLBACK - ACTUAL CASE NOT FOUND]"
 
-if raw_content_file and content_file and raw_content_file.resolve() != content_file.resolve():
-    raw_content_rel = str(raw_content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
-    content_rel = f"{content_rel}  [canonicalized from redirect: {raw_content_rel}]"
+    if raw_content_file and canonical_content_file and raw_content_file.resolve() != canonical_content_file.resolve():
+        raw_content_rel = str(raw_content_file.relative_to(CONTENTS_DIR)).replace("\\", "/")
+        content_rel = f"{content_rel}  [canonicalized from redirect: {raw_content_rel}]"
 
     qr_case_lines.append(f"{info['title']}")
     qr_case_lines.append(f"  generated: {info['rel']}")
     qr_case_lines.append(f"  source:    {content_rel}")
     qr_case_lines.append(f"  github:    {info['github_url']}")
     qr_case_lines.append("")
-
 qr_case_report.write_text("\n".join(qr_case_lines), encoding="utf-8")
 print(f"✅ Article GitHub source map report: {qr_case_report}")
 
@@ -5122,7 +5122,7 @@ print(f"Before cleanup: local file asset refs={before_file_asset_refs}, root-rel
 print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-relative asset attrs={after_root}")
 print("✅ Final image URL cleanup complete")
 RAWPEDIA_IMAGE_URL_CLEANUP
-echo "📄 Rendering PDF..."
+echo "🔧 Preparing final image cleanup before PDF render..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
   echo "❌ weasyprint not found."
@@ -5140,6 +5140,7 @@ import sys
 import html
 import urllib.parse
 from pathlib import Path
+import urllib.request
 
 OUTPUT_HTML = Path(sys.argv[1])
 SOURCE_DIR = Path(sys.argv[2]).resolve()
@@ -5151,6 +5152,8 @@ asset_exts = {
 }
 asset_by_name = {}
 asset_by_rel = {}
+downloaded_fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
+downloaded_fallback_dir.mkdir(parents=True, exist_ok=True)
 
 # GitHub Actions can have RawPedia image assets both in the generated Hugo
 # output and in the checkout source tree. Index both.
@@ -5317,6 +5320,24 @@ def resolve_url(value: str) -> str:
 
             if found:
                 return found.as_uri()
+
+            filename = Path(urllib.parse.unquote(parsed.path)).name
+
+            if filename:
+                fallback_path = downloaded_fallback_dir / filename
+
+                if not fallback_path.exists() or fallback_path.stat().st_size == 0:
+                    try:
+                        print(f"⬇️ Downloading missing RawPedia image fallback: {raw}")
+                        urllib.request.urlretrieve(raw, fallback_path)
+                    except Exception as e:
+                        print(f"⚠️ RawPedia hosted image not found locally and download failed: {raw}")
+                        print(f"   {e}")
+                    else:
+                        if fallback_path.exists() and fallback_path.stat().st_size > 0:
+                            return fallback_path.resolve().as_uri()
+                else:
+                    return fallback_path.resolve().as_uri()
 
             print(f"⚠️ RawPedia hosted image not found locally: {raw}")
 
