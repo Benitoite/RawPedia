@@ -223,7 +223,9 @@ jobs:
           ls -la "$HOME"
           ls -la "$HOME/repo-rt/tools/osx/rawtherapee.icns"
           ls -la "$HOME/repo-rt/rtdata/images/rawtherapee.ico"
-          ls -la "$HOME/RawPedia/Public" | head -80
+
+          echo "---- RawPedia/Public sample ----"
+          find "$HOME/RawPedia/Public" -maxdepth 2 -mindepth 1 | sort | sed -n '1,80p'
 
       - name: Build PDF manual
         env:
