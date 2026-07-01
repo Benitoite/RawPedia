@@ -2,6 +2,31 @@ name: Build RawTherapee Manual PDF
 
 on:
   workflow_dispatch:
+    inputs:
+      rawtherapee_repository:
+        description: RawTherapee repository
+        required: true
+        default: Beep6581/RawTherapee
+      rawtherapee_ref:
+        description: RawTherapee ref
+        required: true
+        default: dev
+      rawpedia_repository:
+        description: RawPedia repository
+        required: true
+        default: rawtherapee/rawpedia
+      rawpedia_ref:
+        description: RawPedia ref
+        required: true
+        default: master
+      script_path:
+        description: Manual builder script path
+        required: true
+        default: scripts/build-rawpedia-manual.zsh
+      rawpedia_qr_jobs:
+        description: Parallel QR jobs, if supported by the script
+        required: true
+        default: "4"
 
 permissions:
   contents: read
@@ -18,16 +43,16 @@ jobs:
       - name: Checkout RawTherapee
         uses: actions/checkout@v4
         with:
-          repository: Beep6581/RawTherapee
-          ref: dev
+          repository: ${{ inputs.rawtherapee_repository }}
+          ref: ${{ inputs.rawtherapee_ref }}
           path: repo-rt
           fetch-depth: 0
 
       - name: Checkout RawPedia
         uses: actions/checkout@v4
         with:
-          repository: rawtherapee/rawpedia
-          ref: master
+          repository: ${{ inputs.rawpedia_repository }}
+          ref: ${{ inputs.rawpedia_ref }}
           path: RawPedia
           submodules: recursive
           fetch-depth: 0
@@ -36,10 +61,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          brew update
+
           brew install \
             hugo \
             imagemagick \
             qrencode \
+            qpdf \
             cairo \
             pango \
             gdk-pixbuf \
@@ -47,12 +75,18 @@ jobs:
             node
 
           python3 -m venv "$GITHUB_WORKSPACE/.venv"
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip setuptools wheel
           "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install weasyprint
 
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
+          echo "---- tool versions ----"
+          python3 --version
+          "$GITHUB_WORKSPACE/.venv/bin/python" --version
           hugo version
+          qpdf --version
+          qrencode --version || true
+          magick -version | head -5 || true
           node --version
           npm --version
           "$GITHUB_WORKSPACE/.venv/bin/weasyprint" --version
@@ -63,6 +97,7 @@ jobs:
 
           cd "$GITHUB_WORKSPACE/RawPedia"
 
+          echo "---- submodules ----"
           git submodule status --recursive || true
 
           if [[ -d themes/hugo-bootstrap-bare/assets ]]; then
@@ -73,7 +108,7 @@ jobs:
             echo "themes/hugo-bootstrap-bare/assets"
             echo
             echo "---- themes directory ----"
-            find "$GITHUB_WORKSPACE/RawPedia/themes" -maxdepth 4 -type d | sort || true
+            find "$GITHUB_WORKSPACE/RawPedia/themes" -maxdepth 5 -type d | sort || true
             exit 1
           fi
 
@@ -95,7 +130,7 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/RawPedia/Public"
 
           echo "---- First generated HTML files ----"
-          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -80 || true
+          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -120 || true
 
           echo "---- HTML count ----"
           HTML_COUNT="$(find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | wc -l | tr -d ' ')"
@@ -110,11 +145,35 @@ jobs:
           FIRST_ENGLISH_PAGE="$(
             find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "index.html" \
               ! -path "*/fr/*" \
+              ! -path "*/es/*" \
+              ! -path "*/it/*" \
+              ! -path "*/jp/*" \
+              ! -path "*/ja/*" \
+              ! -path "*/pt/*" \
+              ! -path "*/de/*" \
+              ! -path "*/ca/*" \
+              ! -path "*/ct/*" \
+              ! -path "*/zh/*" \
+              ! -path "*/cn/*" \
+              ! -path "*/ru/*" \
+              ! -path "*/nl/*" \
+              ! -path "*/pl/*" \
+              ! -path "*/tr/*" \
               ! -path "*/index.fr/*" \
               ! -path "*/index.es/*" \
               ! -path "*/index.it/*" \
               ! -path "*/index.jp/*" \
+              ! -path "*/index.ja/*" \
               ! -path "*/index.pt/*" \
+              ! -path "*/index.de/*" \
+              ! -path "*/index.ca/*" \
+              ! -path "*/index.ct/*" \
+              ! -path "*/index.zh/*" \
+              ! -path "*/index.cn/*" \
+              ! -path "*/index.ru/*" \
+              ! -path "*/index.nl/*" \
+              ! -path "*/index.pl/*" \
+              ! -path "*/index.tr/*" \
               | sort \
               | head -1 || true
           )"
@@ -133,7 +192,7 @@ jobs:
             echo "PLAIN_LEN=$PLAIN_LEN"
             echo "PLAIN_HEAD:"
             perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
-              | cut -c 1-500 || true
+              | cut -c 1-700 || true
           fi
 
       - name: Prepare local paths expected by script
@@ -145,19 +204,30 @@ jobs:
 
           rm -rf "$HOME/repo-rt"
           rm -rf "$HOME/RawPedia"
+          rm -rf "$HOME/rawpedia"
 
           ln -s "$GITHUB_WORKSPACE/repo-rt" "$HOME/repo-rt"
           ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/RawPedia"
 
           test -d "$HOME/repo-rt"
+          test -d "$HOME/repo-rt/.git"
           test -d "$HOME/RawPedia"
+          test -d "$HOME/RawPedia/.git"
           test -d "$HOME/RawPedia/Public"
           test -d "$HOME/RawPedia/content"
+          test -f "$HOME/repo-rt/tools/osx/rawtherapee.icns"
+          test -f "$HOME/repo-rt/rtdata/images/rawtherapee.ico"
+          test -f "$HOME/repo-rt/AUTHORS.txt"
 
+          echo "---- expected local paths ----"
           ls -la "$HOME"
+          ls -la "$HOME/repo-rt/tools/osx/rawtherapee.icns"
+          ls -la "$HOME/repo-rt/rtdata/images/rawtherapee.ico"
+          ls -la "$HOME/RawPedia/Public" | head -80
 
       - name: Build PDF manual
         env:
+          RAWPEDIA_QR_JOBS: ${{ inputs.rawpedia_qr_jobs }}
           SOURCE_DIR: ${{ github.workspace }}/RawPedia/Public
           CONTENTS_DIR: ${{ github.workspace }}/RawPedia/content
           RT_GIT_DIR: ${{ github.workspace }}/repo-rt
@@ -170,73 +240,121 @@ jobs:
 
           export PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH"
 
+          echo "---- tool paths ----"
+          which python3
           which python
           which hugo
           which weasyprint
-          weasyprint --version
+          which qpdf
+          which qrencode
+          which magick || true
 
+          echo "---- tool versions ----"
+          python3 --version
+          weasyprint --version
+          qpdf --version
+          hugo version
+
+          echo "---- build env ----"
+          echo "RAWPEDIA_QR_JOBS=$RAWPEDIA_QR_JOBS"
           echo "SOURCE_DIR=$SOURCE_DIR"
           echo "CONTENTS_DIR=$CONTENTS_DIR"
           echo "RT_GIT_DIR=$RT_GIT_DIR"
           echo "RAWPEDIA_GIT_DIR=$RAWPEDIA_GIT_DIR"
+          echo "RT_COVER_ICNS=$RT_COVER_ICNS"
+          echo "RT_HEADER_ICO=$RT_HEADER_ICO"
+          echo "RT_AUTHORS_TXT=$RT_AUTHORS_TXT"
 
           echo "---- HTML files passed to manual script ----"
-          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -80 || true
+          find "$SOURCE_DIR" -type f -name "*.html" | sort | head -120 || true
 
-          chmod +x scripts/build-rawpedia-manual.zsh
+          chmod +x "${{ inputs.script_path }}"
 
-          if ! ./scripts/build-rawpedia-manual.zsh; then
-          echo "❌ Manual build failed."
-          echo
-          echo "---- rawpedia_book directory ----"
-          ls -la rawpedia_book || true
-          echo
-          echo "---- pages-all.txt ----"
-          head -120 rawpedia_book/pages-all.txt 2>/dev/null || true
-          echo
-          echo "---- selected-pages.txt ----"
-          cat rawpedia_book/selected-pages.txt 2>/dev/null || true
-          echo
-          echo "---- skip-reasons first 220 lines ----"
-          head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
-          echo
-          echo "---- skip-reasons category summary ----"
-          grep -n "^count:\|^not-\|^suppressed-\|^redirect" rawpedia_book/skip-reasons.txt 2>/dev/null || true
-          echo
-          echo "---- suppressed-redirect-pages.txt ----"
-          cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
-          echo
-          echo "---- suppressed-main-pages.txt ----"
-          cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
-        
-          echo
-          echo "---- image refs in generated book.html ----"
-          if [[ -f rawpedia_book/book.html ]]; then
-            echo "img tags:"
-            grep -c '<img\b' rawpedia_book/book.html || true
-        
-            echo "src file refs:"
-            grep -Eo 'src=["'\'']file://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+          if ! "${{ inputs.script_path }}"; then
+            echo "❌ Manual build failed."
             echo
-        
-            echo "src http refs:"
-            grep -Eo 'src=["'\'']https?://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+
+            echo "---- workspace root ----"
+            ls -la || true
+
             echo
-        
-            echo "missing-image boxes:"
-            grep -c 'class=["'\'']missing-image["'\'']' rawpedia_book/book.html || true
-        
-            echo "sample unresolved image attrs:"
-            grep -Eo '(src|data-src|data-original|data-lazy-src)=["'\''][^"'\'']+\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?[^"'\'']*)?["'\'']' rawpedia_book/book.html \
-              | grep -v 'file://' \
-              | head -80 || true
-          fi
-        
-          echo
-          echo "---- missing-images.txt ----"
-          cat rawpedia_book/missing-images.txt 2>/dev/null || true
-        
-          exit 1
+            echo "---- rawpedia_book directory ----"
+            ls -la rawpedia_book || true
+
+            echo
+            echo "---- pages-all.txt ----"
+            head -160 rawpedia_book/pages-all.txt 2>/dev/null || true
+
+            echo
+            echo "---- article GitHub source map ----"
+            head -260 rawpedia_book/article-github-source-map.txt 2>/dev/null || true
+
+            echo
+            echo "---- redirect route map ----"
+            head -260 rawpedia_book/redirect-route-map.txt 2>/dev/null || true
+
+            echo
+            echo "---- suppressed-redirect-pages.txt ----"
+            cat rawpedia_book/suppressed-redirect-pages.txt 2>/dev/null || true
+
+            echo
+            echo "---- suppressed-main-pages.txt ----"
+            cat rawpedia_book/suppressed-main-pages.txt 2>/dev/null || true
+
+            echo
+            echo "---- contributors.txt ----"
+            head -120 rawpedia_book/contributors.txt 2>/dev/null || true
+
+            echo
+            echo "---- authors.txt ----"
+            head -120 rawpedia_book/authors.txt 2>/dev/null || true
+
+            echo
+            echo "---- technical-index-terms.txt ----"
+            head -220 rawpedia_book/technical-index-terms.txt 2>/dev/null || true
+
+            echo
+            echo "---- image refs in generated book.html ----"
+            if [[ -f rawpedia_book/book.html ]]; then
+              echo "img tags:"
+              grep -c '<img\b' rawpedia_book/book.html || true
+
+              echo "src file refs:"
+              grep -Eo 'src=["'\'']file://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+              echo
+
+              echo "src http refs:"
+              grep -Eo 'src=["'\'']https?://[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+              echo
+
+              echo "href internal refs:"
+              grep -Eo 'href=["'\'']#[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+              echo
+
+              echo "href github refs:"
+              grep -Eo 'href=["'\'']https://github.com/RawTherapee/RawPedia[^"'\'']+' rawpedia_book/book.html | wc -l | tr -d ' ' || true
+              echo
+
+              echo "missing-image boxes:"
+              grep -c 'class=["'\'']missing-image["'\'']' rawpedia_book/book.html || true
+
+              echo
+              echo "sample unresolved image attrs:"
+              grep -Eo '(src|data-src|data-original|data-lazy-src)=["'\''][^"'\'']+\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?[^"'\'']*)?["'\'']' rawpedia_book/book.html \
+                | grep -v 'file://' \
+                | head -100 || true
+
+              echo
+              echo "sample github QR hrefs:"
+              grep -Eo 'https://github.com/RawTherapee/RawPedia[^"'\''< ]+' rawpedia_book/book.html \
+                | head -100 || true
+            fi
+
+            echo
+            echo "---- missing-images.txt ----"
+            cat rawpedia_book/missing-images.txt 2>/dev/null || true
+
+            exit 1
           fi
 
       - name: Verify PDF content was generated
@@ -244,21 +362,46 @@ jobs:
           set -euo pipefail
 
           test -f rawpedia_book/book.html
-          test -f rawtherapee_manual.pdf
+          test -s rawtherapee_manual.pdf
+
+          echo "---- Generated output files ----"
+          ls -lh rawtherapee_manual.pdf
+          ls -la rawpedia_book | head -160
+
+          echo "---- PDF page count ----"
+          PAGE_COUNT="$(qpdf --show-npages rawtherapee_manual.pdf)"
+          echo "PAGE_COUNT=$PAGE_COUNT"
+
+          if (( PAGE_COUNT < 20 )); then
+            echo "❌ PDF page count is suspiciously low."
+            exit 1
+          fi
+
+          if (( PAGE_COUNT % 4 != 0 )); then
+            echo "❌ PDF page count is not divisible by 4."
+            exit 1
+          fi
 
           echo "---- Selected article count from generated HTML ----"
-          ARTICLE_COUNT="$(grep -c '<section class="article"' rawpedia_book/book.html || true)"
+          ARTICLE_COUNT="$(
+            grep -E '<section id="page-[^"]+" class="article' rawpedia_book/book.html \
+              | wc -l \
+              | tr -d ' '
+          )"
           echo "ARTICLE_COUNT=$ARTICLE_COUNT"
 
           if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
             echo "❌ Manual HTML contains no article sections."
-            echo "---- Generated reports ----"
-            ls -la rawpedia_book || true
-            echo "---- Pages all ----"
-            head -80 rawpedia_book/pages-all.txt 2>/dev/null || true
-            echo "---- Skip reasons ----"
-            head -220 rawpedia_book/skip-reasons.txt 2>/dev/null || true
             exit 1
+          fi
+
+          echo "---- QR/GitHub source sanity ----"
+          if [[ -f rawpedia_book/article-github-source-map.txt ]]; then
+            grep -n 'canonicalized from redirect' rawpedia_book/article-github-source-map.txt || true
+            if grep -E '\.(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)\.(md|markdown|html)' rawpedia_book/article-github-source-map.txt; then
+              echo "❌ QR source map contains translated source files."
+              exit 1
+            fi
           fi
 
       - name: Upload PDF
@@ -280,4 +423,5 @@ jobs:
             rawpedia_book/*.txt
             rawpedia_book/*.svg
             rawpedia_book/*.png
+            rawpedia_book/article-qrs/*.svg
           if-no-files-found: warn
