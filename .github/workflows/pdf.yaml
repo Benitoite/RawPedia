@@ -437,12 +437,22 @@ jobs:
             echo "❌ PDF page count is not divisible by 4."
             exit 1
           fi
-
           echo "---- Selected article count from generated HTML ----"
           ARTICLE_COUNT="$(
-            grep -E '<section id="page-[^"]+" class="article' rawpedia_book/book.html \
-              | wc -l \
-              | tr -d ' '
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+          
+          s = Path("rawpedia_book/book.html").read_text(encoding="utf-8", errors="replace")
+          
+          count = 0
+          
+          for tag in re.findall(r"<section\b[^>]*>", s, flags=re.I | re.S):
+              if re.search(r'\bid=["\']page-[^"\']+["\']', tag, flags=re.I) and re.search(r'\bclass=["\'][^"\']*\barticle\b', tag, flags=re.I):
+                  count += 1
+          
+          print(count)
+          PY
           )"
           echo "ARTICLE_COUNT=$ARTICLE_COUNT"
 
