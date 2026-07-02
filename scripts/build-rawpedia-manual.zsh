@@ -778,13 +778,11 @@ PCA
 Game Changer
 """.strip().splitlines()
 
-
+missing_images = []
+asset_by_name = {}
 suppressed_redirects = []
 suppressed_main_pages = []
 all_contributors = set()
-
-missing_images = []
-asset_by_name = {}
 
 for root, dirs, files in os.walk(SOURCE_DIR):
     for name in files:
@@ -3053,7 +3051,7 @@ for info in infos:
     qr_case_lines.append(f"  source:    {content_rel}")
     qr_case_lines.append(f"  github:    {info['github_url']}")
     qr_case_lines.append("")
-
+    
 qr_case_report.write_text("\n".join(qr_case_lines), encoding="utf-8")
 print(f"✅ Article GitHub source map report: {qr_case_report}")
 
@@ -5087,11 +5085,15 @@ def rewrite_css_url(m):
 s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
 before_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
-before_root = len(re.findall(r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+before_root = len(re.findall(
+    r"""\b(?:src|href|data-src|data-original|data-lazy-src)=["']/[^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?["']""",
+    s,
+    flags=re.I,
+))
 
 # src="/foo.png", src="foo.png", href="/images/foo.png", data-src="..."
 s = re.sub(
-    r'\b(src|href|data-src|data-original|data-lazy-src)=(["\'])([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)\2',
+    r"""\b(src|href|data-src|data-original|data-lazy-src)=(["'])([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?)\2""",
     rewrite_attr,
     s,
     flags=re.I | re.S,
@@ -5114,7 +5116,11 @@ s = re.sub(
 )
 
 after_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
-after_root = len(re.findall(r'(?:src|href|data-src|data-original|data-lazy-src)=["\']/[^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+after_root = len(re.findall(
+    r"""\b(?:src|href|data-src|data-original|data-lazy-src)=["']/[^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?["']""",
+    s,
+    flags=re.I,
+))
 
 OUTPUT_HTML.write_text(s, encoding="utf-8")
 
@@ -5122,7 +5128,7 @@ print(f"Before cleanup: local file asset refs={before_file_asset_refs}, root-rel
 print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-relative asset attrs={after_root}")
 print("✅ Final image URL cleanup complete")
 RAWPEDIA_IMAGE_URL_CLEANUP
-echo "🔧 Preparing final image cleanup before PDF render..."
+echo "📄 Rendering PDF..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
   echo "❌ weasyprint not found."
@@ -5139,9 +5145,8 @@ import re
 import sys
 import html
 import urllib.parse
-import urllib.request
-from pathlib import Path
 
+from pathlib import Path
 
 OUTPUT_HTML = Path(sys.argv[1])
 SOURCE_DIR = Path(sys.argv[2]).resolve()
@@ -5151,65 +5156,20 @@ asset_exts = {
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
     ".tif", ".tiff", ".bmp", ".ico"
 }
+
 asset_by_name = {}
 asset_by_rel = {}
-downloaded_fallback_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
-downloaded_fallback_dir.mkdir(parents=True, exist_ok=True)
 
-# GitHub Actions can have RawPedia image assets both in the generated Hugo
-# output and in the checkout source tree. Index both.
-candidate_asset_roots = []
+for root, dirs, files in os.walk(SOURCE_DIR):
+    for name in files:
+        p = (Path(root) / name).resolve()
 
-for candidate in [
-    SOURCE_DIR,
-    SOURCE_DIR.parent,
-    Path.cwd(),
-    Path.home() / "RawPedia",
-    Path.home() / "RawPedia" / "Public",
-]:
-    try:
-        candidate = candidate.resolve()
-    except Exception:
-        continue
+        if p.suffix.lower() not in asset_exts:
+            continue
 
-    if candidate.exists() and candidate.is_dir() and candidate not in candidate_asset_roots:
-        candidate_asset_roots.append(candidate)
-
-print("asset roots:")
-for root in candidate_asset_roots:
-    print(f"  {root}")
-
-for asset_root in candidate_asset_roots:
-    for root, dirs, files in os.walk(asset_root):
-        # Avoid wasting time in huge or irrelevant directories.
-        dirs[:] = [
-            d for d in dirs
-            if d not in {
-                ".git", ".venv", "node_modules", "__pycache__",
-                "repo-rt", "article-qrs",
-            }
-        ]
-
-        for name in files:
-            p = (Path(root) / name).resolve()
-
-            if p.suffix.lower() not in asset_exts:
-                continue
-
-            try:
-                rel = str(p.relative_to(asset_root)).replace("\\", "/").lower()
-            except Exception:
-                rel = p.name.lower()
-
-            asset_by_rel.setdefault(rel, p)
-            asset_by_name.setdefault(name.lower(), p)
-
-            # Also index paths relative to SOURCE_DIR when possible.
-            try:
-                source_rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
-                asset_by_rel.setdefault(source_rel, p)
-            except Exception:
-                pass
+        rel = str(p.relative_to(SOURCE_DIR)).replace("\\", "/").lower()
+        asset_by_rel.setdefault(rel, p)
+        asset_by_name.setdefault(name.lower(), p)
 
 print(f"asset_by_name: {len(asset_by_name)}")
 print(f"asset_by_rel: {len(asset_by_rel)}")
@@ -5256,15 +5216,6 @@ def find_asset(value: str) -> Path | None:
     else:
         candidates.append(SOURCE_DIR / path)
 
-    # Common RawPedia hosted URL shape:
-    #   https://rawpedia.pixls.us/images/Foo.jpg
-    # Hugo/source output may place Foo.jpg at root or another asset location.
-    if path.startswith("/images/"):
-        candidates.append(SOURCE_DIR / Path(path).name)
-
-    if "/images/" in path:
-        candidates.append(SOURCE_DIR / Path(path).name)
-
     rel_key = path.lstrip("/").lower()
 
     if rel_key in asset_by_rel:
@@ -5305,54 +5256,10 @@ def resolve_url(value: str) -> str:
         return raw
 
     if raw.startswith(("http://", "https://")):
-        parsed = urllib.parse.urlsplit(raw)
-        host = (parsed.netloc or "").lower()
+        found = find_asset(raw)
 
-        # RawPedia-hosted image URLs should be localized when possible.
-        if host in {
-            "rawpedia.pixls.us",
-            "www.rawpedia.pixls.us",
-            "rawpedia.rawtherapee.com",
-            "www.rawpedia.rawtherapee.com",
-            "rawpedia.rawpixls.us",
-            "www.rawpedia.rawpixls.us",
-        }:
-            found = find_asset(raw)
-
-            if found:
-                return found.as_uri()
-
-            filename = Path(urllib.parse.unquote(parsed.path)).name
-
-            if filename:
-                fallback_path = downloaded_fallback_dir / filename
-
-                if not fallback_path.exists() or fallback_path.stat().st_size == 0:
-                    try:
-                        print(f"⬇️ Downloading missing RawPedia image fallback: {raw}")
-                        urllib.request.urlretrieve(raw, fallback_path)
-                    except Exception as e:
-                        print(f"⚠️ RawPedia hosted image not found locally and download failed: {raw}")
-                        print(f"   {e}")
-
-                        placeholder_path = downloaded_fallback_dir / f"{Path(filename).stem}-missing.svg"
-                        placeholder_path.write_text(
-                            f'''<svg xmlns="http://www.w3.org/2000/svg" width="900" height="320" viewBox="0 0 900 320">
-  <rect width="900" height="320" fill="#f4f4f4"/>
-  <rect x="12" y="12" width="876" height="296" fill="none" stroke="#999" stroke-width="4" stroke-dasharray="16 10"/>
-  <text x="450" y="135" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="34" fill="#800">Missing image</text>
-  <text x="450" y="190" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="24" fill="#555">{html.escape(filename)}</text>
-</svg>
-''',
-                            encoding="utf-8",
-                        )
-                        return placeholder_path.resolve().as_uri()
-                    else:
-                        if fallback_path.exists() and fallback_path.stat().st_size > 0:
-                            return fallback_path.resolve().as_uri()                else:
-                    return fallback_path.resolve().as_uri()
-
-            print(f"⚠️ RawPedia hosted image not found locally: {raw}")
+        if found:
+            return found.as_uri()
 
         return raw
 
@@ -5449,10 +5356,10 @@ def rewrite_img_tag(m):
     # Rewrite unquoted src=foo.jpg.
     replace_unquoted_src()
 
-    # If no src but has data-src, promote data-src to src.
+    # If no src but has data-src/data-original/data-lazy-src, promote it to src.
     if not re.search(r'\bsrc\s*=', tag, flags=re.I):
         dm = re.search(
-            r'\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["\'])(.*?)\1',
+            r"""\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["'])(.*?)\1""",
             tag,
             flags=re.I | re.S,
         )
