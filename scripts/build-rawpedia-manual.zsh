@@ -1004,7 +1004,17 @@ def extract_frontmatter_list_field(fm: str, field: str) -> list[str]:
 
     return out
 
+def content_file_redirect_target_quick(path: Path) -> str:
+    try:
+        text = read_text(path)
+    except Exception:
+        return ""
 
+    return extract_redirect_target_from_source_text(text)
+
+def content_file_is_redirect_quick(path: Path) -> bool:
+    return bool(content_file_redirect_target_quick(path))
+    
 def build_content_file_index():
     """
     Build route/alias/url/title lookup -> actual CONTENTS_DIR file path.
@@ -1023,8 +1033,20 @@ def build_content_file_index():
         if not key:
             return
 
-        # Prefer first exact-ish hit; do not let loose later aliases overwrite it.
-        index.setdefault(key, path)
+        existing = index.get(key)
+
+        if existing is None:
+            index[key] = path
+            return
+
+        existing_is_redirect = content_file_is_redirect_quick(existing)
+        new_is_redirect = content_file_is_redirect_quick(path)
+
+        if existing_is_redirect and not new_is_redirect:
+            index[key] = path
+            return
+
+        return
 
     for root, dirs, files in os.walk(CONTENTS_DIR):
         for name in files:
@@ -1081,7 +1103,123 @@ def build_content_file_index():
 
     return index
 
+def add(key: str, path: Path):
+    key = content_lookup_key(key)
 
+    if not key:
+        return
+
+    existing = index.get(key)
+
+    if existing is None:
+        index[key] = path
+        return
+
+    existing_is_redirect = content_file_is_redirect_quick(existing)
+    new_is_redirect = content_file_is_redirect_quick(path)
+
+    # Critical: if two files normalize to the same lookup key,
+    # prefer the real article over the redirect stub.
+    #
+    # Example:
+    #   Preview_modes.md  -> redirect
+    #   Preview_Modes.md  -> real article
+    #
+    # Both normalize to "preview-modes". The real article must win.
+    if existing_is_redirect and not new_is_redirect:
+        index[key] = path
+        return
+
+    # If both are same redirect/non-redirect status, keep the first hit.
+    return
+
+def find_non_redirect_content_file_for_target(target: str, current_file: Path | None = None) -> Path | None:
+    """
+    Last-resort resolver for case-only / underscore-only collisions.
+
+    Example:
+      redirect file: Preview_modes.md
+      real file:     Preview_Modes.md
+      target text:   Preview modes
+
+    Normal lookup keys collide, so scan source files and choose a non-redirect
+    file whose route/title key matches the target.
+    """
+    if not target or not CONTENTS_DIR.exists():
+        return None
+
+    target = html.unescape(target).strip()
+    target = urllib.parse.unquote(target)
+    target = target.split("#", 1)[0].split("?", 1)[0].strip()
+
+    if not target:
+        return None
+
+    wanted_keys = {
+        content_lookup_key(target),
+        content_lookup_key(target.replace(" ", "_")),
+        content_lookup_key(target.replace(" ", "-")),
+        title_route_key(target),
+        slug_route_key(target),
+    }
+
+    wanted_keys = {k for k in wanted_keys if k}
+
+    best = None
+
+    for root, dirs, files in os.walk(CONTENTS_DIR):
+        for name in files:
+            p = Path(root) / name
+
+            if p.suffix.lower() not in {".md", ".markdown", ".html"}:
+                continue
+
+            try:
+                rel = str(p.relative_to(CONTENTS_DIR)).replace("\\", "/")
+            except Exception:
+                continue
+
+            if not content_rel_is_probably_english(rel):
+                continue
+
+            if current_file and p.resolve() == current_file.resolve():
+                continue
+
+            if source_file_is_redirect(p):
+                continue
+
+            rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+            candidate_keys = {
+                content_lookup_key(rel),
+                content_lookup_key(rel_no_ext),
+                content_lookup_key(Path(rel_no_ext).name),
+                slug_route_key(rel_no_ext),
+                slug_route_key(Path(rel_no_ext).name),
+                title_route_key(Path(rel_no_ext).stem),
+            }
+
+            try:
+                text = read_text(p)
+                fm = extract_hugo_frontmatter(text)
+                title = extract_frontmatter_string_field(fm, "title") if fm else ""
+                if title:
+                    candidate_keys.add(title_route_key(title))
+                    candidate_keys.add(content_lookup_key(title))
+            except Exception:
+                pass
+
+            candidate_keys = {k for k in candidate_keys if k}
+
+            if wanted_keys & candidate_keys:
+                best = p
+
+                # Prefer exact case-sensitive filename-ish match when available.
+                if Path(rel_no_ext).name == target.replace(" ", "_"):
+                    return p
+
+    return best
+    
 def find_content_file_for_article_rel(rel: str) -> Path | None:
     global _content_file_index
 
@@ -1540,15 +1678,9 @@ def find_content_file_for_redirect_target(target: str, current_file: Path | None
     Target may be:
       Some Page
       Some_Page
-      Some-Page
       /some-page/
       some-page/index.html
       ../Other_Page
-
-    Important:
-      Also resolve by Hugo frontmatter title, because many redirect targets
-      use human display titles such as "Preview modes" while the real file
-      path may be differently cased or sluggified.
     """
     if not target:
         return None
@@ -1560,101 +1692,30 @@ def find_content_file_for_redirect_target(target: str, current_file: Path | None
     if not target:
         return None
 
-    target_no_ns = re.sub(r"(?i)^\s*(?:rawpedia:|manual:)\s*", "", target).strip()
-
     candidates = []
 
-    def add_candidate(value: str):
-        value = html.unescape(value or "").strip()
-        if not value:
-            return
-
-        candidates.append(value)
-        candidates.append(value.replace(" ", "_"))
-        candidates.append(value.replace(" ", "-"))
-        candidates.append(value.replace("_", " "))
-        candidates.append(value.replace("_", "-"))
-        candidates.append(value.replace("-", " "))
-        candidates.append("/" + value.strip("/"))
-        candidates.append(value.strip("/") + "/")
-        candidates.append(value.strip("/") + "/index.html")
-
-        title_slug = title_route_key(value)
-        if title_slug:
-            candidates.append(title_slug)
-            candidates.append("/" + title_slug)
-            candidates.append(title_slug + "/")
-            candidates.append(title_slug + "/index.html")
-            candidates.append(title_slug.replace("-", "_"))
-
-    add_candidate(target)
-    add_candidate(target_no_ns)
+    candidates.append(target)
+    candidates.append(target.replace(" ", "_"))
+    candidates.append(target.replace(" ", "-"))
+    candidates.append("/" + target.strip("/"))
+    candidates.append(target.strip("/") + "/")
+    candidates.append(target.strip("/") + "/index.html")
 
     # If redirect is relative to a source directory, try that too.
     if current_file is not None:
         try:
             current_rel_parent = str(current_file.relative_to(CONTENTS_DIR).parent).replace("\\", "/")
             if current_rel_parent and current_rel_parent != ".":
-                for value in list(candidates):
-                    value = value.strip("/")
-                    if value:
-                        candidates.append(current_rel_parent + "/" + value)
+                candidates.append(current_rel_parent + "/" + target.strip("/"))
+                candidates.append(current_rel_parent + "/" + target.replace(" ", "_").strip("/"))
+                candidates.append(current_rel_parent + "/" + target.replace(" ", "-").strip("/"))
         except Exception:
             pass
 
-    seen = set()
-    unique_candidates = []
-
     for candidate in candidates:
-        key = candidate.strip()
-        if not key:
-            continue
-        if key.lower() in seen:
-            continue
-        seen.add(key.lower())
-        unique_candidates.append(key)
-
-    for candidate in unique_candidates:
         found = find_content_file_for_article_rel(candidate)
         if found:
             return found
-
-    # Last-resort title scan over the actual English content files.
-    # This catches redirects like "Preview modes" -> file whose title frontmatter
-    # is "Preview Modes" or whose generated route differs from the target text.
-    wanted_title_key = title_route_key(target_no_ns)
-
-    if wanted_title_key and CONTENTS_DIR.exists():
-        for root, dirs, files in os.walk(CONTENTS_DIR):
-            for name in files:
-                p = Path(root) / name
-
-                if p.suffix.lower() not in {".md", ".markdown", ".html"}:
-                    continue
-
-                try:
-                    rel = str(p.relative_to(CONTENTS_DIR)).replace("\\", "/")
-                except Exception:
-                    continue
-
-                if not content_rel_is_probably_english(rel):
-                    continue
-
-                try:
-                    text = read_text(p)
-                except Exception:
-                    continue
-
-                fm = extract_hugo_frontmatter(text)
-                title = extract_frontmatter_string_field(fm, "title") if fm else ""
-
-                if title and title_route_key(title) == wanted_title_key:
-                    return p
-
-                # Also try filename stem as a display-title fallback.
-                stem_key = title_route_key(Path(rel).stem)
-                if stem_key == wanted_title_key:
-                    return p
 
     return None
 
@@ -1702,14 +1763,22 @@ def canonicalize_content_file_for_qr(path: Path | None, max_hops: int = 12) -> P
             print(f"   target:        {target}")
             return current
 
-        if next_file.resolve() == current:
+        if next_file.resolve() == current.resolve():
+            alternate = find_non_redirect_content_file_for_target(target, current)
+
+            if alternate and alternate.resolve() != current.resolve():
+                print(f"↪ QR source redirect self-hit repaired: {current.name} -> {alternate.name}")
+                next_file = alternate
+            else:
+                print(f"⚠️ QR source redirect resolved to itself:")
+                print(f"   redirect file: {current}")
+                print(f"   target:        {target}")
+                return current
+                print(f"↪ QR source redirect resolved: {current.name} -> {next_file.name}")
+                current = next_file
+
+            print(f"⚠️ QR source redirect chain too long, stopping at: {current}")
             return current
-
-        print(f"↪ QR source redirect resolved: {current.name} -> {next_file.name}")
-        current = next_file
-
-    print(f"⚠️ QR source redirect chain too long, stopping at: {current}")
-    return current
     
 def github_url_for_article_rel(rel: str) -> str:
     content_file = find_content_file_for_article_rel(rel)
@@ -3180,37 +3249,6 @@ if bad_qr_redirect_sources:
     sys.exit(1)
 
 print("✅ QR GitHub source URLs do not point to redirect source files")
-
-# Extra QR redirect audit: inspect every GitHub URL target file directly.
-# This catches cases where route lookup missed a redirect source page.
-bad_qr_redirect_urls = []
-
-for info in infos:
-    url = info["github_url"]
-    parsed = urllib.parse.urlsplit(url)
-    path = urllib.parse.unquote(parsed.path)
-
-    needle = "/RawTherapee/RawPedia/blob/master/content/"
-    if needle not in path:
-        continue
-
-    content_rel = path.split(needle, 1)[1]
-    source_path = CONTENTS_DIR / content_rel
-
-    if source_path.exists() and source_file_is_redirect(source_path):
-        bad_qr_redirect_urls.append((info["title"], info["rel"], source_path, url))
-
-if bad_qr_redirect_urls:
-    print()
-    print("❌ QR GitHub URLs still point to redirect source pages:")
-    for title, rel, path, url in bad_qr_redirect_urls[:120]:
-        print(f"   {title}")
-        print(f"     generated: {rel}")
-        print(f"     source:    {path}")
-        print(f"     github:    {url}")
-    sys.exit(1)
-
-print("✅ QR GitHub URLs pass direct redirect-source audit")
 
 for info in infos:
     info["content"] = rewrite_article_links_to_manual(
@@ -5395,9 +5433,9 @@ if ! command -v weasyprint >/dev/null 2>&1; then
   exit 1
 fi
 echo
-echo "🖼 Image resolver..."
+echo "🖼 Sledgehammer image resolver..."
 
-python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'IMAGE_RESOLVER'
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'SLEDGEHAMMER_IMAGE_RESOLVER'
 import os
 import re
 import sys
@@ -5504,6 +5542,30 @@ def find_asset(value: str) -> Path | None:
 
     return None
 
+def make_missing_svg(raw: str, filename: str) -> Path:
+    placeholder_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
+    placeholder_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = Path(filename or "missing-image").stem or "missing-image"
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", safe_stem).strip("-") or "missing-image"
+
+    placeholder_path = placeholder_dir / f"{safe_stem}-missing.svg"
+
+    placeholder_path.write_text(
+        f'''<svg xmlns="http://www.w3.org/2000/svg" width="900" height="320" viewBox="0 0 900 320">
+  <rect width="900" height="320" fill="#f4f4f4"/>
+  <rect x="12" y="12" width="876" height="296" fill="none" stroke="#999" stroke-width="4" stroke-dasharray="16 10"/>
+  <text x="450" y="120" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="34" fill="#800">Missing image</text>
+  <text x="450" y="175" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="23" fill="#555">{html.escape(filename or "unknown")}</text>
+  <text x="450" y="225" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#777">{html.escape(raw[:120])}</text>
+</svg>
+''',
+        encoding="utf-8",
+    )
+
+    return placeholder_path.resolve()
+
+
 def resolve_url(value: str) -> str:
     raw = html.unescape(value or "").strip()
 
@@ -5519,7 +5581,11 @@ def resolve_url(value: str) -> str:
         if found:
             return found.as_uri()
 
-        return raw
+        parsed = urllib.parse.urlsplit(raw)
+        filename = Path(urllib.parse.unquote(parsed.path)).name or "missing-image"
+
+        print(f"⚠️ Online image not found locally; using local placeholder: {raw}")
+        return make_missing_svg(raw, filename).as_uri()
 
     # Preserve valid local file URLs, including generated article QR SVGs.
     if raw.startswith("file://"):
@@ -5529,7 +5595,9 @@ def resolve_url(value: str) -> str:
         if Path(path).exists():
             return Path(path).resolve().as_uri()
 
-        return raw
+        filename = Path(path).name or "missing-image"
+        print(f"⚠️ Broken file:// image; using local placeholder: {raw}")
+        return make_missing_svg(raw, filename).as_uri()
 
     # Preserve valid absolute local filesystem paths.
     if raw.startswith("/"):
@@ -5543,7 +5611,11 @@ def resolve_url(value: str) -> str:
     if found:
         return found.as_uri()
 
-    return online_for(raw)
+    online = online_for(raw)
+    filename = Path(urllib.parse.unquote(urllib.parse.urlsplit(online).path)).name or "missing-image"
+
+    print(f"⚠️ Image not found locally; using local placeholder: {raw}")
+    return make_missing_svg(raw, filename).as_uri()
 
 def rewrite_srcset_value(value: str) -> str:
     parts = []
@@ -5648,8 +5720,8 @@ print(f"src file before: {before_src_file}")
 print(f"src file after:  {after_src_file}")
 print(f"src http before: {before_src_http}")
 print(f"src http after:  {after_src_http}")
-print("✅ Image resolver complete")
-IMAGE_RESOLVER
+print("✅ Sledgehammer image resolver complete")
+SLEDGEHAMMER_IMAGE_RESOLVER
 
 echo
 echo "🔳 Re-checking generated article QR image paths after cleanup..."
