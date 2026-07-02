@@ -2234,53 +2234,143 @@ def qr_find_exact_title_source_rel(title: str) -> str:
     return chosen
 
 
-def choose_qr_content_rel(title: str, rel: str) -> str:
-    hard_redirect_targets = {
-        "previewmodes": "Preview_Modes.md",
-    }
+def generated_route_key(rel: str) -> str:
+    route = (rel or "").replace("\\", "/").strip()
+    route = re.sub(r"/index\.html$", "", route, flags=re.I)
+    route = re.sub(r"\.html$", "", route, flags=re.I)
+    route = route.strip("/")
 
+    return qr_compact_key(route)
+
+
+def git_content_route_key(content_rel: str) -> str:
+    rel = (content_rel or "").replace("\\", "/").strip("/")
+    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+    # Bundle article:
+    #   Exposure/index.md -> Exposure
+    #   Foo/_index.md    -> Foo
+    if re.search(r"/_?index$", rel_no_ext, flags=re.I):
+        rel_no_ext = re.sub(r"/_?index$", "", rel_no_ext, flags=re.I)
+
+    return qr_compact_key(rel_no_ext)
+
+
+def git_content_title_key(content_rel: str) -> str:
+    title = qr_source_title_for_rel(content_rel)
+    return qr_compact_key(title)
+
+
+def qr_simple_score(content_rel: str, title: str, rel: str) -> int:
+    score = 0
+
+    name = Path(content_rel).name
+    stem = Path(re.sub(r"\.[^.]+$", "", content_rel)).name
+
+    # Non-redirect beats redirect, always.
+    if qr_rel_is_redirect(content_rel):
+        score -= 100000000
+    else:
+        score += 100000000
+
+    route_key = generated_route_key(rel)
     title_key = qr_compact_key(title)
 
-    if title_key in hard_redirect_targets:
-        forced_rel = hard_redirect_targets[title_key]
+    if git_content_route_key(content_rel) == route_key:
+        score += 1000000
 
-        if forced_rel in qr_git_content_rels():
-            if qr_rel_is_redirect(forced_rel):
-                print()
-                print("❌ Hard-forced QR target is unexpectedly a redirect:")
-                print(f"   title:  {title}")
-                print(f"   source: content/{forced_rel}")
-                print(f"   target: {qr_redirect_target_for_rel(forced_rel)}")
-                sys.exit(1)
+    if git_content_title_key(content_rel) == title_key:
+        score += 2000000
 
-            return forced_rel
+    # Prefer article files over _index.md landing pages.
+    if name.lower() == "_index.md":
+        score -= 5000000
 
-    exact_title_rel = qr_find_exact_title_source_rel(title)
+    # Prefer Preview_Modes.md over Preview_modes.md.
+    if re.search(r"_[A-Z]", stem):
+        score += 50000
 
-    if exact_title_rel and not qr_rel_is_redirect(exact_title_rel):
-        return exact_title_rel
+    if re.search(r"_[a-z]", stem):
+        score -= 50000
 
-    wanted = qr_wanted_keys(title, rel)
+    # Prefer more uppercase article casing generally.
+    score += sum(1 for ch in stem if ch.isupper()) * 100
 
-    if not wanted:
+    # Prefer top-level article files over deep paths when otherwise tied.
+    score -= content_rel.count("/") * 100
+
+    return score
+
+
+def choose_qr_content_rel(title: str, rel: str) -> str:
+    route_key = generated_route_key(rel)
+    title_key = qr_compact_key(title)
+
+    candidates = []
+
+    for content_rel in qr_git_content_rels():
+        keys = {
+            git_content_route_key(content_rel),
+            git_content_title_key(content_rel),
+            qr_compact_key(Path(content_rel).stem),
+        }
+
+        if route_key in keys or title_key in keys:
+            candidates.append(content_rel)
+
+    if not candidates:
+        print()
+        print("⚠️ QR source not found by simple route/title lookup:")
+        print(f"   title: {title}")
+        print(f"   rel:   {rel}")
         return ""
 
-    chosen = qr_best_nonredirect_for_keys(wanted, title)
+    candidates = sorted(set(candidates))
 
-    if not chosen:
-        return ""
+    candidates.sort(
+        key=lambda item: (-qr_simple_score(item, title, rel), item)
+    )
 
-    target = qr_redirect_target_for_rel(chosen)
+    chosen = candidates[0]
 
-    if target:
-        repaired = qr_best_nonredirect_for_keys(qr_target_keys(target), target)
+    # If somehow the winner is still a redirect, chase the redirect target once.
+    if qr_rel_is_redirect(chosen):
+        target = qr_redirect_target_for_rel(chosen)
+        target_key = qr_compact_key(target)
 
-        if repaired and not qr_rel_is_redirect(repaired):
-            print(f"↪ QR redirect repaired: {chosen} -> {repaired}")
-            return repaired
+        repaired = [
+            content_rel
+            for content_rel in qr_git_content_rels()
+            if not qr_rel_is_redirect(content_rel)
+            and target_key in {
+                git_content_route_key(content_rel),
+                git_content_title_key(content_rel),
+                qr_compact_key(Path(content_rel).stem),
+            }
+        ]
+
+        if repaired:
+            repaired.sort(
+                key=lambda item: (-qr_simple_score(item, target, rel), item)
+            )
+            print(f"↪ QR redirect repaired: {chosen} -> {repaired[0]}")
+            return repaired[0]
+
+    if qr_rel_is_redirect(chosen):
+        print()
+        print("❌ QR simple resolver still chose a redirect:")
+        print(f"   title:  {title}")
+        print(f"   rel:    {rel}")
+        print(f"   source: content/{chosen}")
+        print(f"   target: {qr_redirect_target_for_rel(chosen)}")
+        print()
+        print("Candidates:")
+        for item in candidates[:30]:
+            marker = "REDIRECT" if qr_rel_is_redirect(item) else "ARTICLE "
+            print(f"   {marker} {qr_simple_score(item, title, rel):12d} content/{item}")
+        sys.exit(1)
 
     return chosen
-
 
 def github_url_for_article(title: str, rel: str) -> str:
     content_rel = choose_qr_content_rel(title, rel)
@@ -5454,572 +5544,6 @@ if missing_images:
 else:
     print("✅ No missing image references detected")
 PY
-echo "🔗 Final QR GitHub REDIRECT source repair..."
-
-python3 - "$OUTPUT_HTML" "$CONTENTS_DIR" <<'FINAL_QR_GITHUB_REDIRECT_REPAIR'
-import os
-import re
-import sys
-import html
-import urllib.parse
-import subprocess
-from pathlib import Path
-from collections import defaultdict
-
-OUTPUT_HTML = Path(sys.argv[1])
-CONTENTS_DIR = Path(sys.argv[2]).resolve()
-GIT_ROOT = CONTENTS_DIR.parent
-
-GITHUB_PREFIX = "https://github.com/RawTherapee/RawPedia/blob/master/content/"
-
-language_codes = {
-    "fr", "es", "it", "jp", "ja", "pt", "de", "ca", "ct",
-    "zh", "cn", "ru", "nl", "pl", "tr"
-}
-
-def compact_key(value: str) -> str:
-    value = html.unescape(value or "").strip()
-    value = urllib.parse.unquote(value)
-    value = value.replace("\\", "/")
-    value = value.split("#", 1)[0].split("?", 1)[0]
-    value = re.sub(r"/index\.html$", "", value, flags=re.I)
-    value = re.sub(r"\.html$", "", value, flags=re.I)
-    value = re.sub(r"\.(md|markdown|html)$", "", value, flags=re.I)
-    value = value.strip("/").lower()
-    return re.sub(r"[^a-z0-9]+", "", value)
-
-def content_rel_is_probably_english(rel: str) -> bool:
-    rel = rel.replace("\\", "/").strip("/")
-    lower = rel.lower()
-    parts = lower.split("/")
-
-    if parts and parts[0] in language_codes:
-        return False
-
-    name = Path(lower).name
-    base = re.sub(r"\.(md|markdown|html)$", "", name, flags=re.I)
-
-    if "." in base:
-        suffix = base.rsplit(".", 1)[-1]
-        if suffix in language_codes:
-            return False
-
-    if re.search(
-        r"(^|[-_.])(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)$",
-        base,
-        flags=re.I,
-    ):
-        return False
-
-    return True
-
-def git_content_rels() -> list[str]:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(GIT_ROOT), "ls-tree", "-r", "--name-only", "HEAD", "content"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except Exception as e:
-        print(f"❌ Cannot read Git tree from {GIT_ROOT}: {e}")
-        sys.exit(1)
-
-    rels = []
-
-    for line in result.stdout.splitlines():
-        line = line.strip().replace("\\", "/")
-
-        if not line.startswith("content/"):
-            continue
-
-        rel = line[len("content/"):]
-
-        if Path(rel).suffix.lower() not in {".md", ".markdown", ".html"}:
-            continue
-
-        if not content_rel_is_probably_english(rel):
-            continue
-
-        rels.append(rel)
-
-    return sorted(set(rels))
-
-_git_blob_cache = {}
-
-def git_blob_text(content_rel: str) -> str:
-    content_rel = content_rel.replace("\\", "/").strip("/")
-
-    if content_rel in _git_blob_cache:
-        return _git_blob_cache[content_rel]
-
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(GIT_ROOT), "show", f"HEAD:content/{content_rel}"],
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        text = result.stdout
-    except Exception:
-        text = ""
-
-    _git_blob_cache[content_rel] = text
-    return text
-
-def plain_text(s: str) -> str:
-    s = re.sub(r"<script\b.*?</script>", " ", s, flags=re.I | re.S)
-    s = re.sub(r"<style\b.*?</style>", " ", s, flags=re.I | re.S)
-    s = re.sub(r"<[^>]+>", " ", s)
-    s = html.unescape(s)
-    return re.sub(r"\s+", " ", s).strip()
-
-def extract_frontmatter(text: str) -> str:
-    if text.startswith("---"):
-        m = re.match(r"(?s)^---\s*\n(.*?)\n---\s*(?:\n|$)", text)
-        if m:
-            return m.group(1)
-
-    if text.startswith("+++"):
-        m = re.match(r"(?s)^\+\+\+\s*\n(.*?)\n\+\+\+\s*(?:\n|$)", text)
-        if m:
-            return m.group(1)
-
-    return ""
-
-def fm_string(fm: str, field: str) -> str:
-    m = re.search(
-        rf"^\s*{re.escape(field)}\s*[:=]\s*['\"]?([^'\"\n#]+)['\"]?\s*$",
-        fm,
-        flags=re.I | re.M,
-    )
-    return m.group(1).strip() if m else ""
-
-def source_title(content_rel: str) -> str:
-    text = git_blob_text(content_rel)
-    fm = extract_frontmatter(text)
-
-    if not fm:
-        return ""
-
-    return fm_string(fm, "title")
-
-def redirect_target(content_rel: str) -> str:
-    text = git_blob_text(content_rel)
-
-    if not text:
-        return ""
-
-    # Hugo/RawPedia redirect shortcodes:
-    # {{< redirect "Preview_Modes" >}}
-    # {{% redirect "Preview_Modes" %}}
-    # {{< redirect target="Preview_Modes" >}}
-    m = re.search(
-        r'''\{\{[%<]\s*redirect\s+(?:target\s*=\s*|url\s*=\s*|to\s*=\s*)?["']([^"']+)["']\s*[%>]\}\}''',
-        text,
-        flags=re.I | re.S,
-    )
-    if m:
-        return m.group(1).strip()
-
-    # MediaWiki-style redirect.
-    m = re.search(
-        r"(?im)^\s*#?\s*redirect\s*\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]*)?\]\]",
-        text,
-    )
-    if m:
-        return m.group(1).strip()
-
-    # Plain redirect text.
-    p = plain_text(text)
-    m = re.search(r"(?im)^\s*#?\s*redirect\s+(.+?)\s*$", p)
-    if m:
-        return m.group(1).strip()
-
-    # Front matter redirect fields.
-    fm = extract_frontmatter(text)
-
-    if fm:
-        for field in ("redirect", "redirect_to", "redirectto", "target", "to"):
-            value = fm_string(fm, field)
-            if value:
-                return value.strip()
-
-    return ""
-
-def is_redirect(content_rel: str) -> bool:
-    return bool(redirect_target(content_rel))
-
-def content_route_stem(content_rel: str) -> str:
-    """
-    Return the article identity for a content source path.
-
-    Correct:
-      Exposure/index.md       -> Exposure
-      Exposure/_index.md      -> Exposure
-      Exposure.md             -> Exposure
-      local_adjustments.md    -> local_adjustments
-
-    Wrong:
-      Exposure/index.md       -> index
-    """
-    rel = (content_rel or "").replace("\\", "/").strip("/")
-    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
-
-    parts = rel_no_ext.split("/")
-
-    if not parts:
-        return ""
-
-    last = parts[-1].lower()
-
-    if last in {"index", "_index"}:
-        if len(parts) >= 2:
-            return parts[-2]
-        return ""
-
-    return parts[-1]
-
-
-def content_route_no_ext(content_rel: str) -> str:
-    """
-    Return route without extension, dropping trailing /index or /_index.
-    """
-    rel = (content_rel or "").replace("\\", "/").strip("/")
-    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
-
-    rel_no_ext = re.sub(r"/_?index$", "", rel_no_ext, flags=re.I)
-
-    return rel_no_ext.strip("/")
-    
-def rel_keys(content_rel: str) -> set[str]:
-    route = content_route_no_ext(content_rel)
-    stem = content_route_stem(content_rel)
-    title = source_title(content_rel)
-
-    keys = {
-        compact_key(content_rel),
-        compact_key(route),
-        compact_key(stem),
-        compact_key(stem.replace("_", " ")),
-        compact_key(stem.replace("-", " ")),
-    }
-
-    # Never let generic index/_index match every page bundle.
-    keys.discard("index")
-    keys.discard("_index")
-
-    if title:
-        keys.add(compact_key(title))
-        keys.add(compact_key(title.replace(" ", "_")))
-        keys.add(compact_key(title.replace(" ", "-")))
-
-    return {k for k in keys if k}
-    
-def target_keys(target: str) -> set[str]:
-    target = html.unescape(target or "").strip()
-    target = urllib.parse.unquote(target)
-    target = target.split("#", 1)[0].split("?", 1)[0].strip()
-
-    variants = {
-        target,
-        target.replace(" ", "_"),
-        target.replace(" ", "-"),
-        target.replace("_", " "),
-        target.replace("-", " "),
-        "/" + target.strip("/"),
-        target.strip("/") + "/index.html",
-        target.strip("/") + ".md",
-        Path(target).name,
-    }
-
-    return {compact_key(v) for v in variants if compact_key(v)}
-
-def casing_score(content_rel: str) -> float:
-    stem = Path(re.sub(r"\.[^.]+$", "", content_rel)).name
-    parts = [p for p in re.split(r"[_\-\s]+", stem) if p]
-
-    score = 0.0
-
-    if is_redirect(content_rel):
-        score -= 100000000
-    else:
-        score += 100000000
-
-    # Preview_Modes beats Preview_modes.
-    score += sum(1 for p in parts if p[:1].isupper()) * 10000
-    score -= sum(1 for p in parts if p[:1].islower()) * 12000
-    score += sum(1 for ch in stem if ch.isupper()) * 100
-
-    # Prefer top-level source files if tied.
-    score -= content_rel.count("/") * 100
-
-    # Shorter final tie-breaker.
-    score -= len(content_rel) * 0.01
-
-    return score
-
-all_rels = git_content_rels()
-
-by_key = defaultdict(list)
-
-for rel in all_rels:
-    for key in rel_keys(rel):
-        by_key[key].append(rel)
-
-def best_nonredirect_for_keys(keys: set[str]) -> str:
-    candidates = []
-
-    for key in keys:
-        candidates.extend(by_key.get(key, []))
-
-    candidates = sorted(set(candidates))
-
-    if not candidates:
-        return ""
-
-    nonredirects = [rel for rel in candidates if not is_redirect(rel)]
-
-    if nonredirects:
-        nonredirects.sort(key=lambda rel: (-casing_score(rel), rel))
-        return nonredirects[0]
-
-    candidates.sort(key=lambda rel: (-casing_score(rel), rel))
-    return candidates[0]
-
-def resolve_rel(old_rel: str) -> str:
-    old_rel = urllib.parse.unquote(old_rel or "").replace("\\", "/").strip("/")
-
-    if not old_rel:
-        return ""
-
-    old_route = content_route_no_ext(old_rel)
-    old_stem = content_route_stem(old_rel)
-
-    keys = {
-        compact_key(old_rel),
-        compact_key(old_route),
-        compact_key(old_stem),
-        compact_key(old_stem.replace("_", " ")),
-        compact_key(old_stem.replace("-", " ")),
-    }
-
-    keys.discard("index")
-    keys.discard("_index")
-    keys = {k for k in keys if k}
-
-    exact = next((rel for rel in all_rels if rel == old_rel), "")
-
-    # If the exact file is a redirect, chase it.
-    if exact:
-        target = redirect_target(exact)
-
-        if target:
-            repaired = best_nonredirect_for_keys(target_keys(target))
-            if repaired:
-                return repaired
-
-        # Exact nonredirect is not necessarily canonical.
-        # Example:
-        #   Preview_modes.md exists, but Preview_Modes.md is the desired casing.
-        repaired = best_nonredirect_for_keys(keys)
-
-        if repaired:
-            return repaired
-
-        return exact
-
-    candidate = best_nonredirect_for_keys(keys)
-
-    if not candidate:
-        return ""
-
-    target = redirect_target(candidate)
-
-    if target:
-        repaired = best_nonredirect_for_keys(target_keys(target))
-        if repaired:
-            return repaired
-
-    return candidate
-
-def github_url_for_rel(content_rel: str) -> str:
-    return GITHUB_PREFIX + urllib.parse.quote(content_rel, safe="/")
-
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-github_url_re = re.compile(
-    r"https://github\.com/RawTherapee/RawPedia/blob/master/content/([^\"'<>\s]+)",
-    flags=re.I,
-)
-
-repairs = {}
-unresolved = []
-
-for m in github_url_re.finditer(s):
-    old_url = m.group(0)
-    old_rel = urllib.parse.unquote(m.group(1))
-
-    new_rel = resolve_rel(old_rel)
-
-    if not new_rel:
-        unresolved.append(old_rel)
-        continue
-
-    new_url = github_url_for_rel(new_rel)
-
-    if new_url != old_url:
-        repairs[old_url] = new_url
-
-if repairs:
-    print(f"🔧 Final GitHub source URL repairs: {len(repairs)}")
-
-    for old_url, new_url in sorted(repairs.items()):
-        old_rel = urllib.parse.unquote(old_url.split("/content/", 1)[-1])
-        new_rel = urllib.parse.unquote(new_url.split("/content/", 1)[-1])
-        print(f"   {old_rel} -> {new_rel}")
-        s = s.replace(old_url, new_url)
-else:
-    print("✅ No final GitHub source URL repairs needed")
-
-if unresolved:
-    print()
-    print("⚠️ Could not resolve these GitHub content rels through Git tree:")
-    for rel in sorted(set(unresolved))[:120]:
-        print(f"   {rel}")
-
-OUTPUT_HTML.write_text(s, encoding="utf-8")
-
-# Regenerate QR SVGs from final hrefs. Do not use fragile section parsing.
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-starts = [m.start() for m in re.finditer(r'<div class="article-github-qr"', s, flags=re.I)]
-qr_regenerated = 0
-qr_bad = []
-
-for i, start in enumerate(starts):
-    end = starts[i + 1] if i + 1 < len(starts) else len(s)
-    chunk = s[start:end]
-
-    href_m = re.search(
-        r'<a\b[^>]*\bhref=["\']([^"\']*github\.com/RawTherapee/RawPedia/blob/master/content/[^"\']+)["\']',
-        chunk,
-        flags=re.I | re.S,
-    )
-
-    img_m = re.search(
-        r'<img\b[^>]*\bsrc=["\']([^"\']*article-qrs/[^"\']+\.svg)["\']',
-        chunk,
-        flags=re.I | re.S,
-    )
-
-    if not href_m or not img_m:
-        continue
-
-    final_url = html.unescape(href_m.group(1)).strip()
-    qr_src = html.unescape(img_m.group(1)).strip()
-
-    if not qr_src.startswith("file://"):
-        qr_bad.append(qr_src)
-        continue
-
-    qr_path = Path(urllib.parse.unquote(urllib.parse.urlsplit(qr_src).path))
-
-    try:
-        subprocess.run(
-            [
-                "qrencode",
-                "-t", "SVG",
-                "-o", str(qr_path),
-                "-m", "1",
-                "-s", "5",
-                final_url,
-            ],
-            check=True,
-        )
-        qr_regenerated += 1
-    except Exception as e:
-        print(f"❌ Could not regenerate QR SVG {qr_path}: {e}")
-        sys.exit(1)
-
-print(f"✅ Article QR SVGs regenerated from final corrected URLs: {qr_regenerated}")
-
-if qr_bad:
-    print()
-    print("❌ Bad QR image paths during final repair:")
-    for item in qr_bad[:80]:
-        print(f"   {item}")
-    sys.exit(1)
-
-# Final hard audit: every GitHub source URL in book.html must resolve to itself and not be redirect.
-s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-bad_remaining = []
-final_report_lines = []
-
-for m in github_url_re.finditer(s):
-    url = m.group(0)
-    rel = urllib.parse.unquote(m.group(1))
-    best = resolve_rel(rel)
-    target = redirect_target(rel)
-
-    final_report_lines.append(f"source: {rel}")
-    final_report_lines.append(f"url:    {url}")
-
-    if target:
-        final_report_lines.append(f"ERROR:  redirect -> {target}")
-        bad_remaining.append((rel, best or "[UNKNOWN]", target, url))
-
-    if best and best != rel:
-        final_report_lines.append(f"ERROR:  best should be {best}")
-        bad_remaining.append((rel, best, target or "", url))
-
-    final_report_lines.append("")
-
-report = OUTPUT_HTML.parent / "article-github-source-map-final.txt"
-report.write_text("\n".join(final_report_lines), encoding="utf-8")
-print(f"✅ Final article GitHub source map report: {report}")
-
-if bad_remaining:
-    print()
-    print("❌ Final QR GitHub URLs still point to redirect/bad source files:")
-    for rel, best, target, url in bad_remaining[:120]:
-        print(f"   current: {rel}")
-        print(f"   best:    {best}")
-        if target:
-            print(f"   target:  {target}")
-        print(f"   url:     {url}")
-    sys.exit(1)
-    
-# Hard casing sanity check for known case-collision source files.
-if "Preview_Modes.md" in all_rels:
-    s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
-
-    bad_preview_urls = [
-        url for url in re.findall(
-            r"https://github\.com/RawTherapee/RawPedia/blob/master/content/[^\"'<>\s]+",
-            s,
-            flags=re.I,
-        )
-        if urllib.parse.unquote(url).endswith("/content/Preview_modes.md")
-    ]
-
-    if bad_preview_urls:
-        print()
-        print("❌ QR GitHub URL still uses wrong Preview_Modes casing:")
-        for url in bad_preview_urls[:20]:
-            print(f"   {url}")
-        print()
-        print("Expected:")
-        print("   https://github.com/RawTherapee/RawPedia/blob/master/content/Preview_Modes.md")
-        sys.exit(1)
-
-    print("✅ Preview_Modes QR casing is correct")
-    
-print("✅ Final QR GitHub URLs point to non-redirect Git source files")
-FINAL_QR_GITHUB_REDIRECT_REPAIR
 
 echo "✅ HTML book complete: $OUTPUT_HTML"
 echo
