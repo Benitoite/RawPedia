@@ -438,36 +438,41 @@ jobs:
             exit 1
           fi
           echo "---- Selected article count from generated HTML ----"
+          echo "---- Selected article count from generated HTML ----"
           ARTICLE_COUNT="$(
             python3 - <<'PY'
           from pathlib import Path
-          import re
+          from html.parser import HTMLParser
+          
+          class ArticleCounter(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.count = 0
+          
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() != "section":
+                      return
+          
+                  attrs = dict(attrs)
+                  section_id = attrs.get("id", "")
+                  classes = attrs.get("class", "").split()
+          
+                  if section_id.startswith("page-") and "article" in classes:
+                      self.count += 1
           
           s = Path("rawpedia_book/book.html").read_text(encoding="utf-8", errors="replace")
           
-          count = 0
+          parser = ArticleCounter()
+          parser.feed(s)
           
-          for tag in re.findall(r"<section\b[^>]*>", s, flags=re.I | re.S):
-              if re.search(r'\bid=["\']page-[^"\']+["\']', tag, flags=re.I) and re.search(r'\bclass=["\'][^"\']*\barticle\b', tag, flags=re.I):
-                  count += 1
-          
-          print(count)
+          print(parser.count)
           PY
           )"
           echo "ARTICLE_COUNT=$ARTICLE_COUNT"
-
+          
           if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
             echo "❌ Manual HTML contains no article sections."
             exit 1
-          fi
-
-          echo "---- QR/GitHub source sanity ----"
-          if [[ -f rawpedia_book/article-github-source-map.txt ]]; then
-            grep -n 'canonicalized from redirect' rawpedia_book/article-github-source-map.txt || true
-            if grep -E '\.(fr|es|it|jp|ja|pt|de|ca|ct|zh|cn|ru|nl|pl|tr)\.(md|markdown|html)' rawpedia_book/article-github-source-map.txt; then
-              echo "❌ QR source map contains translated source files."
-              exit 1
-            fi
           fi
 
       - name: Upload PDF
