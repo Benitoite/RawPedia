@@ -4221,6 +4221,19 @@ body {{
   margin: 0.22em 0 0.08em 0;
 }}
 
+.dereferenced-mediawiki-image {{
+  margin: 0.08in 0 0.12in 0;
+  padding: 0;
+  break-inside: avoid;
+  text-align: center;
+}}
+
+.dereferenced-mediawiki-image img {{
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}}
+
 p {{
   margin: 0 0 0.24em 0;
 }}
@@ -4924,7 +4937,366 @@ if [[ "$TECH_INDEX_COUNT" -ne 1 || "$INDEX_BODY_COUNT" -ne 1 ]]; then
 fi
 echo "---- technical index CSS check ----"
 grep -n "index-body" -A10 "$OUTPUT_HTML" || true
+
+echo "🖼 Dereferencing MediaWiki-style image links..."
+
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" <<'DEREFERENCE_MEDIAWIKI_IMAGES'
+import os
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+SOURCE_DIR = Path(sys.argv[2]).resolve()
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico"
+}
+
+asset_by_name = {}
+
+for root, dirs, files in os.walk(SOURCE_DIR):
+    for name in files:
+        p = (Path(root) / name).resolve()
+
+        if p.suffix.lower() in asset_exts:
+            asset_by_name.setdefault(name.lower(), p)
+
+def find_image_by_name(name: str) -> Path | None:
+    raw = html.unescape(name or "").strip()
+    raw = urllib.parse.unquote(raw)
+    raw = raw.replace("\\", "/")
+
+    # Strip MediaWiki-ish prefixes.
+    raw = re.sub(r"(?i)^\s*(?:image|file)\s*:\s*", "", raw).strip()
+
+    # Strip leading local URL path wrappers if present.
+    parsed = urllib.parse.urlsplit(raw)
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/")
+    filename = Path(path).name
+
+    if not filename:
+        return None
+
+    if Path(filename).suffix.lower() not in asset_exts:
+        return None
+
+    found = asset_by_name.get(filename.lower())
+
+    if found and found.exists():
+        return found
+
+    return None
+
+def image_html(filename: str, found: Path | None, original: str) -> str:
+    display_name = html.escape(filename)
+
+    if found:
+        uri = found.resolve().as_uri()
+        return (
+            '<figure class="dereferenced-mediawiki-image">'
+            f'<img src="{html.escape(uri, quote=True)}" alt="{display_name}">'
+            '</figure>'
+        )
+
+    return (
+        '<div class="missing-image">'
+        '<strong>Missing image</strong>'
+        f'<div class="missing-file">{display_name}</div>'
+        f'<div class="missing-path">{html.escape(original)}</div>'
+        '</div>'
+    )
+
+def replace_anchor(m):
+    full = m.group(0)
+    href = html.unescape(m.group(1)).strip()
+    label_html = m.group(2)
+    label_text = re.sub(r"<[^>]+>", "", label_html)
+    label_text = html.unescape(label_text).strip()
+
+    candidates = [label_text, href]
+
+    for candidate in candidates:
+        candidate_clean = html.unescape(candidate or "").strip()
+
+        if not re.match(r"(?i)^(?:image|file)\s*:", candidate_clean) and not Path(urllib.parse.urlsplit(candidate_clean).path).suffix.lower() in asset_exts:
+            continue
+
+        found = find_image_by_name(candidate_clean)
+        raw_name = re.sub(r"(?i)^\s*(?:image|file)\s*:\s*", "", candidate_clean).strip()
+        filename = Path(urllib.parse.unquote(urllib.parse.urlsplit(raw_name).path)).name
+
+        if filename and Path(filename).suffix.lower() in asset_exts:
+            return image_html(filename, found, candidate_clean)
+
+    return full
+
+def replace_plain_mediawiki_image(m):
+    original = m.group(0)
+    raw = m.group(1)
+    found = find_image_by_name(raw)
+    filename = Path(urllib.parse.unquote(urllib.parse.urlsplit(raw).path)).name
+
+    return image_html(filename, found, original)
+
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+before_imgs = len(re.findall(r"<img\b", s, flags=re.I))
+before_mediawiki = len(re.findall(r"(?i)\b(?:image|file):[^<>\s]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)\b", s))
+
+# Case 1:
+# <a href="file:///.../Profile-filled.png">image:Profile-filled.png</a>
+# <a href="/images/Profile-filled.png">Profile-filled.png</a>
+s = re.sub(
+    r'<a\b[^>]*\bhref=["\']([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"\']*)?)["\'][^>]*>(.*?)</a>',
+    replace_anchor,
+    s,
+    flags=re.I | re.S,
+)
+
+# Case 2:
+# Bare text: image:Profile-filled.png
+# Bare text: File:Profile-filled.png
+#
+# Avoid matching inside attributes by requiring the previous char not to be
+# quote, slash, equals, colon, or alphanumeric.
+s = re.sub(
+    r'(?<!["\'=:/A-Za-z0-9])((?:image|file):[^\s<>"\']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico))',
+    replace_plain_mediawiki_image,
+    s,
+    flags=re.I,
+)
+
+after_imgs = len(re.findall(r"<img\b", s, flags=re.I))
+after_mediawiki = len(re.findall(r"(?i)\b(?:image|file):[^<>\s]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)\b", s))
+
+OUTPUT_HTML.write_text(s, encoding="utf-8")
+
+print(f"mediawiki image refs before: {before_mediawiki}")
+print(f"mediawiki image refs after:  {after_mediawiki}")
+print(f"img tags before: {before_imgs}")
+print(f"img tags after:  {after_imgs}")
+print("✅ MediaWiki-style image dereference complete")
+DEREFERENCE_MEDIAWIKI_IMAGES
+
 echo "🖼 Final image URL cleanup before PDF render..."
+
+python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'RAWPEDIA_IMAGE_URL_CLEANUP'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1])
+SOURCE_DIR = Path(sys.argv[2]).resolve()
+RAWPEDIA_ONLINE_URL = sys.argv[3].rstrip("/")
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico"
+}
+
+def is_asset_url(value: str) -> bool:
+    raw = html.unescape(value or "").strip()
+    path = urllib.parse.urlsplit(raw).path
+    return Path(path).suffix.lower() in asset_exts
+
+def online_url_for_path(path: str) -> str:
+    path = urllib.parse.unquote(path or "").replace("\\", "/")
+
+    if not path:
+        return path
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    return RAWPEDIA_ONLINE_URL + path
+
+def local_or_online(value: str) -> str:
+    raw = html.unescape(value or "").strip()
+
+    if not raw:
+        return value
+
+    if raw.startswith(("http://", "https://", "data:", "mailto:", "#")):
+        return value
+
+    parsed = urllib.parse.urlsplit(raw)
+    path = urllib.parse.unquote(parsed.path).replace("\\", "/")
+
+    if not path:
+        return value
+
+    # IMPORTANT:
+    # Preserve all valid file:// URLs, even when they are outside SOURCE_DIR.
+    # This protects generated QR codes in rawpedia_book/article-qrs/*.svg.
+    if raw.startswith("file://"):
+        local_path = Path(path)
+
+        if local_path.exists():
+            return local_path.resolve().as_uri()
+
+        # If the file:// URL is broken, do not invent a RawPedia URL for
+        # absolute local paths such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+        # Leave it alone so the later preflight can report the real problem.
+        if path.startswith("/"):
+            return raw
+
+        fixed = online_url_for_path(path)
+
+        if parsed.query:
+            fixed += "?" + parsed.query
+
+        return fixed
+
+    # Absolute local filesystem path, such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+    # Keep it local if it exists.
+    if path.startswith("/"):
+        local_path = Path(path)
+
+        if local_path.exists():
+            return local_path.resolve().as_uri()
+
+        # Root-relative RawPedia URL, such as /images/foo.png.
+        local_candidate = SOURCE_DIR / path.lstrip("/")
+
+        if local_candidate.exists():
+            return local_candidate.resolve().as_uri()
+
+        fixed = online_url_for_path(path)
+
+        if parsed.query:
+            fixed += "?" + parsed.query
+
+        return fixed
+
+    # Plain relative URL, such as foo.png or images/foo.png.
+    local_candidate = SOURCE_DIR / path
+
+    if local_candidate.exists():
+        return local_candidate.resolve().as_uri()
+
+    fixed = online_url_for_path(path)
+
+    if parsed.query:
+        fixed += "?" + parsed.query
+
+    return fixed
+
+def rewrite_attr(m):
+    attr = m.group(1)
+    quote = m.group(2)
+    value = m.group(3)
+
+    if not is_asset_url(value):
+        return m.group(0)
+
+    new_value = local_or_online(value)
+
+    return f'{attr}={quote}{html.escape(new_value, quote=True)}{quote}'
+
+def rewrite_srcset(m):
+    attr = m.group(1)
+    quote = m.group(2)
+    value = m.group(3)
+
+    out = []
+
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+
+        if not candidate:
+            continue
+
+        bits = candidate.split()
+        url = bits[0]
+        descriptor = " ".join(bits[1:])
+
+        if is_asset_url(url):
+            url = local_or_online(url)
+
+        if descriptor:
+            out.append(f"{url} {descriptor}")
+        else:
+            out.append(url)
+
+    return f'{attr}={quote}{html.escape(", ".join(out), quote=True)}{quote}'
+
+def rewrite_css_url(m):
+    quote = m.group(1) or ""
+    value = m.group(2)
+
+    if not is_asset_url(value):
+        return m.group(0)
+
+    new_value = local_or_online(value)
+
+    if quote:
+        return f"url({quote}{new_value}{quote})"
+
+    return f"url({new_value})"
+
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+before_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+before_root = len(re.findall(
+    r"""\b(?:src|href|data-src|data-original|data-lazy-src)=["']/[^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?["']""",
+    s,
+    flags=re.I,
+))
+
+# src="/foo.png", src="foo.png", href="/images/foo.png", data-src="..."
+s = re.sub(
+    r"""\b(src|href|data-src|data-original|data-lazy-src)=(["'])([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?)\2""",
+    rewrite_attr,
+    s,
+    flags=re.I | re.S,
+)
+
+# srcset="/foo.png 1x, /bar.png 2x"
+s = re.sub(
+    r'\b(srcset)=(["\'])(.*?)\2',
+    rewrite_srcset,
+    s,
+    flags=re.I | re.S,
+)
+
+# CSS url("/foo.png")
+s = re.sub(
+    r'url\(\s*([\'"]?)([^\'")]+?\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^\'")]*)?)\1\s*\)',
+    rewrite_css_url,
+    s,
+    flags=re.I | re.S,
+)
+
+after_file_asset_refs = len(re.findall(r'file://[^"\'\s)<>]+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)', s, flags=re.I))
+after_root = len(re.findall(
+    r"""\b(?:src|href|data-src|data-original|data-lazy-src)=["']/[^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?["']""",
+    s,
+    flags=re.I,
+))
+
+OUTPUT_HTML.write_text(s, encoding="utf-8")
+
+print(f"Before cleanup: local file asset refs={before_file_asset_refs}, root-relative asset attrs={before_root}")
+print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-relative asset attrs={after_root}")
+
+print("✅ Final image URL cleanup complete")
+RAWPEDIA_IMAGE_URL_CLEANUP
+echo "🔧 Preparing final image cleanup before PDF render..."
+
+if ! command -v weasyprint >/dev/null 2>&1; then
+  echo "❌ weasyprint not found."
+  echo "Activate your venv first:"
+  echo "source myvenv/bin/activate"
+  exit 1
+fi
+echo
+echo "🖼 Sledgehammer image resolver..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'SLEDGEHAMMER_IMAGE_RESOLVER'
 import os
@@ -4932,6 +5304,7 @@ import re
 import sys
 import html
 import urllib.parse
+
 from pathlib import Path
 
 OUTPUT_HTML = Path(sys.argv[1])
@@ -4964,37 +5337,6 @@ def is_asset_value(value: str) -> bool:
     value = html.unescape(value or "").strip()
     path = urllib.parse.urlsplit(value).path
     return Path(path).suffix.lower() in asset_exts
-
-def is_rawpedia_http(value: str) -> bool:
-    raw = html.unescape(value or "").strip()
-
-    if not raw.startswith(("http://", "https://")):
-        return False
-
-    parsed = urllib.parse.urlsplit(raw)
-    host = (parsed.netloc or "").lower()
-
-    return host in {
-        "rawpedia.pixls.us",
-        "www.rawpedia.pixls.us",
-        "rawpedia.rawtherapee.com",
-        "www.rawpedia.rawtherapee.com",
-        "rawpedia.rawpixls.us",
-        "www.rawpedia.rawpixls.us",
-    }
-
-def missing_image_placeholder(value: str) -> str:
-    raw = html.unescape(value or "").strip()
-    parsed = urllib.parse.urlsplit(raw)
-    filename = Path(urllib.parse.unquote(parsed.path)).name or raw or "unknown image"
-
-    return (
-        '<div class="missing-image">'
-        '<strong>Missing image</strong>'
-        f'<div class="missing-file">{html.escape(filename)}</div>'
-        f'<div class="missing-path">{html.escape(raw)}</div>'
-        '</div>'
-    )
 
 def online_for(value: str) -> str:
     raw = html.unescape(value or "").strip()
@@ -5033,12 +5375,6 @@ def find_asset(value: str) -> Path | None:
     else:
         candidates.append(SOURCE_DIR / path)
 
-    if path.startswith("/images/"):
-        candidates.append(SOURCE_DIR / Path(path).name)
-
-    if "/images/" in path:
-        candidates.append(SOURCE_DIR / Path(path).name)
-
     rel_key = path.lstrip("/").lower()
 
     if rel_key in asset_by_rel:
@@ -5053,8 +5389,8 @@ def find_asset(value: str) -> Path | None:
         if images_key in asset_by_rel:
             candidates.append(asset_by_rel[images_key])
 
+    # Critical fallback: basename lookup.
     base = Path(path).name.lower()
-
     if base in asset_by_name:
         candidates.append(asset_by_name[base])
 
@@ -5086,6 +5422,7 @@ def resolve_url(value: str) -> str:
 
         return raw
 
+    # Preserve valid local file URLs, including generated article QR SVGs.
     if raw.startswith("file://"):
         parsed = urllib.parse.urlsplit(raw)
         path = urllib.parse.unquote(parsed.path)
@@ -5095,6 +5432,7 @@ def resolve_url(value: str) -> str:
 
         return raw
 
+    # Preserve valid absolute local filesystem paths.
     if raw.startswith("/"):
         path = Path(raw)
 
@@ -5122,13 +5460,7 @@ def rewrite_srcset_value(value: str) -> str:
         descriptor = " ".join(bits[1:])
 
         if is_asset_value(url):
-            resolved = resolve_url(url)
-
-            # srcset cannot contain a placeholder div. Drop unresolved web entries.
-            if resolved.startswith(("http://", "https://")):
-                continue
-
-            url = resolved
+            url = resolve_url(url)
 
         if descriptor:
             parts.append(f"{url} {descriptor}")
@@ -5137,38 +5469,8 @@ def rewrite_srcset_value(value: str) -> str:
 
     return ", ".join(parts)
 
-def extract_attr(tag: str, attr_name: str) -> str:
-    m = re.search(
-        rf'\b{re.escape(attr_name)}\s*=\s*(["\'])(.*?)\1',
-        tag,
-        flags=re.I | re.S,
-    )
-
-    if not m:
-        return ""
-
-    return html.unescape(m.group(2)).strip()
-
 def rewrite_img_tag(m):
     tag = m.group(0)
-
-    original_src = extract_attr(tag, "src")
-
-    if not original_src:
-        for fallback_attr in ("data-src", "data-original", "data-lazy-src"):
-            original_src = extract_attr(tag, fallback_attr)
-            if original_src:
-                break
-
-    # Key behavior:
-    # If a RawPedia-hosted image cannot be found locally, replace the whole
-    # <img> with a visible placeholder so the PDF build can continue.
-    if original_src and is_asset_value(original_src):
-        resolved_src = resolve_url(original_src)
-
-        if resolved_src.startswith(("http://", "https://")) and is_rawpedia_http(resolved_src):
-            print(f"⚠️ Replacing unresolved RawPedia image with placeholder: {resolved_src}")
-            return missing_image_placeholder(resolved_src)
 
     def replace_quoted_attr(attr_name, value_rewriter):
         nonlocal tag
@@ -5192,10 +5494,6 @@ def rewrite_img_tag(m):
         def repl(am):
             value = am.group(1)
             new_value = resolve_url(value) if is_asset_value(value) else value
-
-            if new_value.startswith(("http://", "https://")) and is_rawpedia_http(new_value):
-                return f'src="{html.escape(new_value, quote=True)}"'
-
             return f'src="{html.escape(new_value, quote=True)}"'
 
         tag = re.sub(
@@ -5205,6 +5503,7 @@ def rewrite_img_tag(m):
             flags=re.I | re.S,
         )
 
+    # Rewrite quoted attrs.
     for attr in ("src", "data-src", "data-original", "data-lazy-src"):
         replace_quoted_attr(
             attr,
@@ -5212,8 +5511,11 @@ def rewrite_img_tag(m):
         )
 
     replace_quoted_attr("srcset", rewrite_srcset_value)
+
+    # Rewrite unquoted src=foo.jpg.
     replace_unquoted_src()
 
+    # If no src but has data-src/data-original/data-lazy-src, promote it to src.
     if not re.search(r'\bsrc\s*=', tag, flags=re.I):
         dm = re.search(
             r"""\b(?:data-src|data-original|data-lazy-src)\s*=\s*(["'])(.*?)\1""",
@@ -5223,11 +5525,6 @@ def rewrite_img_tag(m):
 
         if dm and is_asset_value(dm.group(2)):
             src = resolve_url(dm.group(2))
-
-            if src.startswith(("http://", "https://")) and is_rawpedia_http(src):
-                print(f"⚠️ Replacing unresolved RawPedia lazy image with placeholder: {src}")
-                return missing_image_placeholder(src)
-
             tag = tag[:-1] + f' src="{html.escape(src, quote=True)}">'
 
     return tag
@@ -5237,14 +5534,12 @@ s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 before_imgs = len(re.findall(r"<img\b", s, flags=re.I))
 before_src_file = len(re.findall(r'\bsrc\s*=\s*["\']file://', s, flags=re.I))
 before_src_http = len(re.findall(r'\bsrc\s*=\s*["\']https?://', s, flags=re.I))
-before_missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
 
 s = re.sub(r"<img\b[^>]*>", rewrite_img_tag, s, flags=re.I | re.S)
 
 after_imgs = len(re.findall(r"<img\b", s, flags=re.I))
 after_src_file = len(re.findall(r'\bsrc\s*=\s*["\']file://', s, flags=re.I))
 after_src_http = len(re.findall(r'\bsrc\s*=\s*["\']https?://', s, flags=re.I))
-after_missing_boxes = len(re.findall(r'class=["\']missing-image["\']', s, flags=re.I))
 
 OUTPUT_HTML.write_text(s, encoding="utf-8")
 
@@ -5254,8 +5549,6 @@ print(f"src file before: {before_src_file}")
 print(f"src file after:  {after_src_file}")
 print(f"src http before: {before_src_http}")
 print(f"src http after:  {after_src_http}")
-print(f"missing placeholders before: {before_missing_boxes}")
-print(f"missing placeholders after:  {after_missing_boxes}")
 print("✅ Sledgehammer image resolver complete")
 SLEDGEHAMMER_IMAGE_RESOLVER
 
@@ -5478,7 +5771,7 @@ if relative_manual_links:
     
 HREF_REF_REPORT
 
-echo "🔧 Preparing final image cleanup before PDF render..."
+echo "📄 Rendering PDF..."
 
 BOOK_BASE_URL="$(
 python3 - "$OUTPUT_HTML" <<'PY'
