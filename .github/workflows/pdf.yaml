@@ -281,10 +281,14 @@ jobs:
 
           chmod +x "${{ inputs.script_path }}"
 
-          if ! "./${{ inputs.script_path }}"; then
+          mkdir -p rawpedia_book
+          
+          if ! "./${{ inputs.script_path }}" 2>&1 | tee rawpedia_book/build-script.log; then
             echo "❌ Manual build failed."
             echo
-
+          echo "---- build-script.log tail ----"
+          tail -240 rawpedia_book/build-script.log || true
+          echo
             set +o pipefail
 
             echo "---- workspace root ----"
@@ -464,7 +468,7 @@ jobs:
           path: |
             rawtherapee_manual.pdf
           if-no-files-found: warn
-
+          
       - name: Upload build reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -475,5 +479,6 @@ jobs:
             rawpedia_book/*.txt
             rawpedia_book/*.svg
             rawpedia_book/*.png
+            rawpedia_book/*.log
             rawpedia_book/article-qrs/*.svg
           if-no-files-found: warn
