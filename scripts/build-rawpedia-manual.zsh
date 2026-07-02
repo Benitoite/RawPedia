@@ -5645,6 +5645,48 @@ def redirect_target(content_rel: str) -> str:
 def is_redirect(content_rel: str) -> bool:
     return bool(redirect_target(content_rel))
 
+def content_route_stem(content_rel: str) -> str:
+    """
+    Return the article identity for a content source path.
+
+    Correct:
+      Exposure/index.md       -> Exposure
+      Exposure/_index.md      -> Exposure
+      Exposure.md             -> Exposure
+      local_adjustments.md    -> local_adjustments
+
+    Wrong:
+      Exposure/index.md       -> index
+    """
+    rel = (content_rel or "").replace("\\", "/").strip("/")
+    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+    parts = rel_no_ext.split("/")
+
+    if not parts:
+        return ""
+
+    last = parts[-1].lower()
+
+    if last in {"index", "_index"}:
+        if len(parts) >= 2:
+            return parts[-2]
+        return ""
+
+    return parts[-1]
+
+
+def content_route_no_ext(content_rel: str) -> str:
+    """
+    Return route without extension, dropping trailing /index or /_index.
+    """
+    rel = (content_rel or "").replace("\\", "/").strip("/")
+    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+    rel_no_ext = re.sub(r"/_?index$", "", rel_no_ext, flags=re.I)
+
+    return rel_no_ext.strip("/")
+    
 def rel_keys(content_rel: str) -> set[str]:
     route = content_route_no_ext(content_rel)
     stem = content_route_stem(content_rel)
