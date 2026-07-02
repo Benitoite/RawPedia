@@ -3839,14 +3839,6 @@ body {{
   margin: 0 0 0.045in 0;
 }}
 
-.license-source {{
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 5.5pt;
-  color: #666;
-  margin-bottom: 0.055in;
-  overflow-wrap: anywhere;
-}}
-
 .license-text {{
   column-count: 2;
   column-gap: 0.11in;
@@ -4478,7 +4470,6 @@ hr {{
     out.write(f"""
 <section class="license-page">
 <h1>License</h1>
-<div class="license-source">{html.escape(license_source or "No local license file found.")}</div>
 <div class="license-text">{license_html}</div>
 </section>
 """)
@@ -5405,6 +5396,30 @@ def find_asset(value: str) -> Path | None:
 
     return None
 
+def make_missing_svg(raw: str, filename: str) -> Path:
+    placeholder_dir = OUTPUT_HTML.parent / "online-image-fallbacks"
+    placeholder_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = Path(filename or "missing-image").stem or "missing-image"
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", safe_stem).strip("-") or "missing-image"
+
+    placeholder_path = placeholder_dir / f"{safe_stem}-missing.svg"
+
+    placeholder_path.write_text(
+        f'''<svg xmlns="http://www.w3.org/2000/svg" width="900" height="320" viewBox="0 0 900 320">
+  <rect width="900" height="320" fill="#f4f4f4"/>
+  <rect x="12" y="12" width="876" height="296" fill="none" stroke="#999" stroke-width="4" stroke-dasharray="16 10"/>
+  <text x="450" y="120" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="34" fill="#800">Missing image</text>
+  <text x="450" y="175" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="23" fill="#555">{html.escape(filename or "unknown")}</text>
+  <text x="450" y="225" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#777">{html.escape(raw[:120])}</text>
+</svg>
+''',
+        encoding="utf-8",
+    )
+
+    return placeholder_path.resolve()
+
+
 def resolve_url(value: str) -> str:
     raw = html.unescape(value or "").strip()
 
@@ -5420,7 +5435,11 @@ def resolve_url(value: str) -> str:
         if found:
             return found.as_uri()
 
-        return raw
+        parsed = urllib.parse.urlsplit(raw)
+        filename = Path(urllib.parse.unquote(parsed.path)).name or "missing-image"
+
+        print(f"⚠️ Online image not found locally; using local placeholder: {raw}")
+        return make_missing_svg(raw, filename).as_uri()
 
     # Preserve valid local file URLs, including generated article QR SVGs.
     if raw.startswith("file://"):
@@ -5430,7 +5449,9 @@ def resolve_url(value: str) -> str:
         if Path(path).exists():
             return Path(path).resolve().as_uri()
 
-        return raw
+        filename = Path(path).name or "missing-image"
+        print(f"⚠️ Broken file:// image; using local placeholder: {raw}")
+        return make_missing_svg(raw, filename).as_uri()
 
     # Preserve valid absolute local filesystem paths.
     if raw.startswith("/"):
@@ -5444,7 +5465,11 @@ def resolve_url(value: str) -> str:
     if found:
         return found.as_uri()
 
-    return online_for(raw)
+    online = online_for(raw)
+    filename = Path(urllib.parse.unquote(urllib.parse.urlsplit(online).path)).name or "missing-image"
+
+    print(f"⚠️ Image not found locally; using local placeholder: {raw}")
+    return make_missing_svg(raw, filename).as_uri()
 
 def rewrite_srcset_value(value: str) -> str:
     parts = []
@@ -5852,9 +5877,10 @@ def walk(obj):
 
 walk(data)
 
-print(f"PDF GoTo internal links: {goto_count}")
-print(f"PDF URI external links:  {uri_count}")
-print(f"PDF other link actions:  {other_count}")
+if goto_count or uri_count or other_count:
+    print(f"PDF GoTo internal links: {goto_count}")
+    print(f"PDF URI external links:  {uri_count}")
+    print(f"PDF other link actions:  {other_count}")
 
 bad_fragment_uris = [
     s for s in samples
@@ -5868,13 +5894,7 @@ if bad_fragment_uris:
         print(f"   {s}")
     sys.exit(1)
 
-if goto_count == 0:
-    print()
-    print("⚠️ qpdf JSON did not expose PDF GoTo links.")
-    print("⚠️ Since links work in Preview/Safari, continuing to final assembly.")
-    sys.exit(0)
-
-print("✅ PDF has internal GoTo link actions")
+print("✅ PDF link-action check complete")
 CHECK_PDF_LINK_ACTIONS
 
 echo
