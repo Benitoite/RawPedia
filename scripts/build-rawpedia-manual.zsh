@@ -5249,11 +5249,6 @@ hr {{
 
     out.write(f"""
 <section class="preface">
-<p style="text-align:justify; margin-bottom:0.35in;">
-  <a href="#contents">
-    <img src="{html.escape(RT_COVER_URI, quote=True)}" style="width:1.2in; height:1.2in; object-fit:contain; background:#1d1d1d; border-radius:0.16in; padding:0.08in;" alt="Contents">
-  </a>
-</p>
 <h2>Reference Versions at Buildtime</h1>
 <div class="git-version-box preface-git-version">
   <div>{html.escape(RT_GIT_VERSION)}</div>
