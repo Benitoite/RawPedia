@@ -3057,8 +3057,9 @@ def add_rawpedia_legacy_aliases(link_map):
         "saving": "saving-images",
         "saving-images": "saving-images",
 
-        "lens/geometry": "lens-geometry",
-        "lens-geometry": "lens-geometry",
+        "lens/geometry": "lens--geometry",
+        "lens-geometry": "lens--geometry",
+        "lens--geometry": "lens--geometry",
 
         "batch-adjustments-sync": "batch-adjustments-sync",
         "batch_adjustments_-_sync": "batch-adjustments-sync",
@@ -3072,6 +3073,7 @@ def add_rawpedia_legacy_aliases(link_map):
         "dark-frame": "dark-frame",
         "dark_frame": "dark-frame",
 
+        "auto-matched_curve": "rgb-curves",
         "auto-matched-curve": "rgb-curves",
         "auto_matched_curve": "rgb-curves",
     }
@@ -6496,6 +6498,300 @@ if file_count + http_count + data_count < 50:
 
 print("✅ Final image preflight passed")
 FINAL_IMAGE_PREFLIGHT
+
+echo
+echo "🔗 Final href sanitizer before WeasyPrint..."
+
+python3 - "$OUTPUT_HTML" "$RAWPEDIA_ONLINE_URL" <<'FINAL_HREF_SANITIZER'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+OUTPUT_HTML = Path(sys.argv[1]).resolve()
+RAWPEDIA_ONLINE_URL = sys.argv[2].rstrip("/")
+
+s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+download_exts = {
+    ".pp3", ".pdf", ".zip", ".7z", ".gz", ".bz2", ".xz",
+    ".dcp", ".icc", ".icm", ".txt", ".json",
+    ".exe", ".dmg", ".appimage", ".cr3", ".cr2", ".nef", ".arw", ".dng",
+}
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico",
+}
+
+safe_schemes = {
+    "http", "https", "mailto", "tel", "data", "javascript",
+}
+
+def slug_route_key(value: str) -> str:
+    value = html.unescape(value or "").strip()
+    value = urllib.parse.unquote(value)
+    value = value.replace("\\", "/")
+    value = re.sub(r"/+", "/", value)
+
+    value = value.split("#", 1)[0]
+    value = value.split("?", 1)[0]
+    value = value.strip("/")
+
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+
+    value = value.strip("/").lower()
+    value = value.replace("_", "-")
+    value = re.sub(r"[^a-z0-9/.-]+", "-", value)
+    value = re.sub(r"-+", "-", value)
+    value = re.sub(r"/+", "/", value)
+    value = value.strip("-/")
+
+    return value
+
+def title_route_key(title: str) -> str:
+    title = html.unescape(title or "").strip().lower()
+    title = title.replace("&", "and")
+    title = re.sub(r"[^a-z0-9]+", "-", title)
+    title = re.sub(r"-+", "-", title).strip("-")
+    return title
+
+def online_url(path: str, query: str = "", fragment: str = "") -> str:
+    path = urllib.parse.unquote(path or "").replace("\\", "/")
+
+    if not path:
+        path = "/"
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    return urllib.parse.urlunsplit((
+        "https",
+        urllib.parse.urlsplit(RAWPEDIA_ONLINE_URL).netloc,
+        path,
+        query,
+        fragment,
+    ))
+
+# Build a simple route -> internal target map from the generated manual itself.
+manual_map = {}
+
+for m in re.finditer(
+    r'<section\b[^>]*\bid=["\'](page-[^"\']+)["\'][^>]*\bdata-title=["\']([^"\']+)["\']',
+    s,
+    flags=re.I | re.S,
+):
+    page_id = html.unescape(m.group(1)).strip()
+    title = html.unescape(m.group(2)).strip()
+    target = "#" + page_id
+
+    stem = page_id.removeprefix("page-")
+
+    keys = {
+        slug_route_key(stem),
+        slug_route_key(title),
+        title_route_key(title),
+    }
+
+    for key in keys:
+        if key:
+            manual_map.setdefault(key, target)
+
+# Explicit legacy aliases that still show up in RawPedia content.
+legacy_aliases = {
+    "auto-matched-curve": "rgb-curves",
+    "auto-matched_curve": "rgb-curves",
+    "auto_matched_curve": "rgb-curves",
+
+    "lens/geometry": "lens--geometry",
+    "lens-geometry": "lens--geometry",
+    "lens--geometry": "lens--geometry",
+
+    "the-image-editor-tab": "editor",
+    "the_image_editor_tab": "editor",
+
+    "the-file-browser-tab": "file-browser-tab",
+    "the_file_browser_tab": "file-browser-tab",
+
+    "the-batch-queue": "queue",
+    "the_batch_queue": "queue",
+
+    "saving": "saving-images",
+    "saving-images": "saving-images",
+
+    "batch-adjustments-sync": "batch-adjustments-sync",
+    "batch_adjustments_-_sync": "batch-adjustments-sync",
+
+    "sidecar-files-processing-profiles": "sidecar-files-processing-profiles",
+    "sidecar_files_-_processing_profiles": "sidecar-files-processing-profiles",
+
+    "flat-field": "flat-field",
+    "flat_field": "flat-field",
+
+    "dark-frame": "dark-frame",
+    "dark_frame": "dark-frame",
+}
+
+for old, target_stem in legacy_aliases.items():
+    target = "#page-" + target_stem
+
+    # Only add aliases that actually exist in this manual.
+    if target in manual_map.values() or re.search(
+        rf'\bid=["\']{re.escape(target[1:])}["\']',
+        s,
+        flags=re.I,
+    ):
+        manual_map.setdefault(slug_route_key(old), target)
+
+before_file = len(re.findall(r'\bhref=["\']file://', s, flags=re.I))
+before_zgotmplz = len(re.findall(r'#ZgotmplZ', s, flags=re.I))
+
+changed = 0
+forced_online = 0
+forced_internal = 0
+zgotmplz_fixed = 0
+
+def sanitize_href(raw_href: str) -> str:
+    global changed, forced_online, forced_internal, zgotmplz_fixed
+
+    raw = html.unescape(raw_href or "").strip()
+
+    if not raw:
+        return raw_href
+
+    if "ZgotmplZ" in raw:
+        changed += 1
+        zgotmplz_fixed += 1
+        return "#"
+
+    if raw.startswith("#"):
+        return raw
+
+    parsed = urllib.parse.urlsplit(raw)
+
+    if parsed.scheme in safe_schemes:
+        return raw
+
+    path = urllib.parse.unquote(parsed.path or "").replace("\\", "/")
+    path_ext = Path(path).suffix.lower()
+
+    # file:///.../book.html#foo -> #foo
+    if parsed.scheme == "file":
+        local_path = Path(path)
+
+        try:
+            if local_path.resolve() == OUTPUT_HTML and parsed.fragment:
+                changed += 1
+                forced_internal += 1
+                return "#" + parsed.fragment
+        except Exception:
+            pass
+
+        # Any other file:// href in an anchor is poisonous for PDF output.
+        # Convert it to online RawPedia when possible, otherwise neutralize.
+        if path_ext in download_exts or path_ext in asset_exts:
+            changed += 1
+            forced_online += 1
+            return online_url("/" + Path(path).name, parsed.query, parsed.fragment)
+
+        changed += 1
+        return "#"
+
+    # Root-relative or relative manual-ish link.
+    key = slug_route_key(path)
+
+    if key in manual_map:
+        changed += 1
+        forced_internal += 1
+        return manual_map[key]
+
+    # Also try without fragment path oddities.
+    if path:
+        key2 = slug_route_key(path.replace("_", "-"))
+        if key2 in manual_map:
+            changed += 1
+            forced_internal += 1
+            return manual_map[key2]
+
+    # Downloads/assets should be online, not file:/// in PDF.
+    if path_ext in download_exts or path_ext in asset_exts:
+        changed += 1
+        forced_online += 1
+        return online_url(path, parsed.query, parsed.fragment)
+
+    # Any remaining local-looking href would become file:/// under WeasyPrint.
+    if parsed.scheme == "" and path:
+        changed += 1
+        forced_online += 1
+        return online_url(path, parsed.query, parsed.fragment)
+
+    return raw
+
+def repl(m):
+    quote = m.group(1)
+    href = m.group(2)
+
+    new_href = sanitize_href(href)
+
+    return f'href={quote}{html.escape(new_href, quote=True)}{quote}'
+
+s2 = re.sub(
+    r'\bhref=(["\'])(.*?)\1',
+    repl,
+    s,
+    flags=re.I | re.S,
+)
+
+after_file = len(re.findall(r'\bhref=["\']file://', s2, flags=re.I))
+after_zgotmplz = len(re.findall(r'#ZgotmplZ', s2, flags=re.I))
+
+OUTPUT_HTML.write_text(s2, encoding="utf-8")
+
+print(f"file:// hrefs before: {before_file}")
+print(f"file:// hrefs after:  {after_file}")
+print(f"#ZgotmplZ refs before: {before_zgotmplz}")
+print(f"#ZgotmplZ refs after:  {after_zgotmplz}")
+print(f"hrefs changed: {changed}")
+print(f"forced internal manual hrefs: {forced_internal}")
+print(f"forced online hrefs: {forced_online}")
+print(f"ZgotmplZ fixed: {zgotmplz_fixed}")
+
+# Hard fail if anything local-ish remains.
+final = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+
+bad = []
+
+for m in re.finditer(r'\bhref=(["\'])(.*?)\1', final, flags=re.I | re.S):
+    href = html.unescape(m.group(2)).strip()
+
+    if not href:
+        continue
+
+    if "ZgotmplZ" in href:
+        bad.append(href)
+        continue
+
+    if href.startswith("#"):
+        continue
+
+    parsed = urllib.parse.urlsplit(href)
+
+    if parsed.scheme in safe_schemes:
+        continue
+
+    bad.append(href)
+
+if bad:
+    print()
+    print("❌ Local/relative hrefs remain after final sanitizer:")
+    for item in sorted(set(bad))[:120]:
+        print(f"   {item}")
+    sys.exit(1)
+
+print("✅ Final href sanitizer passed")
+FINAL_HREF_SANITIZER
 
 echo
 echo "---- href refs in generated book.html ----"
