@@ -76,7 +76,7 @@ jobs:
 
           python3 -m venv "$GITHUB_WORKSPACE/.venv"
           "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install --upgrade pip setuptools wheel
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install weasyprint
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m pip install weasyprint beautifulsoup4
 
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
