@@ -6969,6 +6969,292 @@ if bad:
 print("✅ No file:// anchor hrefs remain")
 CHECK_FILE_HREFS
 
+sanitize_hrefs_for_weasyprint() {
+  local html_file="$1"
+
+  echo
+  echo "🔗 Sanitizing hrefs for WeasyPrint: $html_file"
+
+  python3 - "$html_file" "$RAWPEDIA_ONLINE_URL" <<'SANITIZE_HREFS_FOR_WEASYPRINT'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+html_path = Path(sys.argv[1]).resolve()
+rawpedia_online = sys.argv[2].rstrip("/")
+rawpedia_host = urllib.parse.urlsplit(rawpedia_online).netloc
+
+s = html_path.read_text(encoding="utf-8", errors="replace")
+
+safe_schemes = {"http", "https", "mailto", "tel", "data", "javascript"}
+
+download_exts = {
+    ".pp3", ".pdf", ".zip", ".7z", ".gz", ".bz2", ".xz",
+    ".dcp", ".icc", ".icm", ".txt", ".json",
+    ".exe", ".dmg", ".appimage", ".cr3", ".cr2", ".nef", ".arw", ".dng",
+}
+
+asset_exts = {
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+    ".tif", ".tiff", ".bmp", ".ico",
+}
+
+def make_online(path: str, query: str = "", fragment: str = "") -> str:
+    path = urllib.parse.unquote(path or "").replace("\\", "/")
+
+    if not path:
+        path = "/"
+
+    if not path.startswith("/"):
+        path = "/" + path
+
+    return urllib.parse.urlunsplit((
+        "https",
+        rawpedia_host,
+        path,
+        query,
+        fragment,
+    ))
+
+def slug(value: str) -> str:
+    value = html.unescape(value or "").strip()
+    value = urllib.parse.unquote(value)
+    value = value.replace("\\", "/")
+    value = re.sub(r"/+", "/", value)
+    value = value.split("#", 1)[0].split("?", 1)[0]
+    value = value.strip("/")
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+    value = value.lower()
+    value = value.replace("_", "-")
+    value = re.sub(r"[^a-z0-9/.-]+", "-", value)
+    value = re.sub(r"-+", "-", value)
+    value = re.sub(r"/+", "/", value)
+    return value.strip("-/")
+
+# Build route -> #page-id from the final generated manual.
+manual = {}
+
+for m in re.finditer(
+    r'<section\b[^>]*\bid=(["\'])(page-[^"\']+)\1[^>]*\bdata-title=(["\'])(.*?)\3',
+    s,
+    flags=re.I | re.S,
+):
+    page_id = html.unescape(m.group(2)).strip()
+    title = html.unescape(m.group(4)).strip()
+    stem = page_id.removeprefix("page-")
+    target = "#" + page_id
+
+    for key in {
+        slug(stem),
+        slug(title),
+        slug(title.replace("&", "and")),
+    }:
+        if key:
+            manual.setdefault(key, target)
+
+# Hard aliases seen in RawPedia.
+aliases = {
+    "auto-matched-curve": "rgb-curves",
+    "auto-matched_curve": "rgb-curves",
+    "auto_matched_curve": "rgb-curves",
+
+    "lens/geometry": "lens--geometry",
+    "lens-geometry": "lens--geometry",
+    "lens--geometry": "lens--geometry",
+
+    "shadows/highlights": "shadows--highlights",
+    "shadows-highlights": "shadows--highlights",
+    "shadows--highlights": "shadows--highlights",
+
+    "black-and-white": "black-and-white",
+    "black-and-white-addon": "black-and-white-addon",
+    "black-and-white_addon": "black-and-white-addon",
+
+    "adding-support-for-new-raw-formats": "adding-support-for-new-raw-formats",
+    "adding_support_for_new_raw_formats": "adding-support-for-new-raw-formats",
+
+    "saving": "saving-images",
+    "saving-images": "saving-images",
+
+    "sidecar-files-processing-profiles": "sidecar-files-processing-profiles",
+    "sidecar_files_-_processing_profiles": "sidecar-files-processing-profiles",
+
+    "flat-field": "flat-field",
+    "flat_field": "flat-field",
+
+    "dark-frame": "dark-frame",
+    "dark_frame": "dark-frame",
+}
+
+ids = set(
+    html.unescape(m.group(2)).strip()
+    for m in re.finditer(r'\bid=(["\'])(.*?)\1', s, flags=re.I | re.S)
+)
+
+for old, target_stem in aliases.items():
+    target = "#page-" + target_stem
+
+    if target[1:] in ids:
+        manual.setdefault(slug(old), target)
+
+changed = 0
+zgotmplz = 0
+file_to_internal = 0
+local_to_internal = 0
+local_to_online = 0
+local_to_hash = 0
+
+def sanitize(raw_href: str) -> str:
+    global changed, zgotmplz, file_to_internal, local_to_internal, local_to_online, local_to_hash
+
+    raw = html.unescape(raw_href or "").strip()
+
+    if not raw:
+        return raw_href
+
+    if "ZgotmplZ" in raw:
+        changed += 1
+        zgotmplz += 1
+        return "#"
+
+    if raw.startswith("#"):
+        return raw
+
+    parsed = urllib.parse.urlsplit(raw)
+
+    if parsed.scheme in safe_schemes:
+        return raw
+
+    path = urllib.parse.unquote(parsed.path or "").replace("\\", "/")
+    ext = Path(path).suffix.lower()
+
+    # file:///.../book.html#target => #target
+    if parsed.scheme == "file":
+        try:
+            local_path = Path(path).resolve()
+            if local_path == html_path and parsed.fragment:
+                changed += 1
+                file_to_internal += 1
+                return "#" + parsed.fragment
+        except Exception:
+            pass
+
+        # file:///.../rawpedia_book/foo or file:///foo are toxic in PDF.
+        key = slug(path)
+
+        if key in manual:
+            changed += 1
+            file_to_internal += 1
+            return manual[key]
+
+        if ext in download_exts or ext in asset_exts:
+            changed += 1
+            local_to_online += 1
+            return make_online(path, parsed.query, parsed.fragment)
+
+        changed += 1
+        local_to_hash += 1
+        return "#"
+
+    # Root-relative or relative links.
+    key = slug(path)
+
+    if key in manual:
+        changed += 1
+        local_to_internal += 1
+        return manual[key]
+
+    # Try route without fragment-specific heading.
+    if path:
+        no_heading = path.split("#", 1)[0]
+        key2 = slug(no_heading)
+
+        if key2 in manual:
+            changed += 1
+            local_to_internal += 1
+            return manual[key2]
+
+    # Downloads/assets become web links.
+    if ext in download_exts or ext in asset_exts:
+        changed += 1
+        local_to_online += 1
+        return make_online(path, parsed.query, parsed.fragment)
+
+    # Final fallback: any local or relative link would become file:///.
+    # Send it online instead of allowing a file URI into the PDF.
+    if parsed.scheme == "" and path:
+        changed += 1
+        local_to_online += 1
+        return make_online(path, parsed.query, parsed.fragment)
+
+    return raw
+
+def repl(m):
+    quote = m.group(1)
+    href = m.group(2)
+    new = sanitize(href)
+    return f'href={quote}{html.escape(new, quote=True)}{quote}'
+
+before_file = len(re.findall(r'\bhref=["\']file:', s, flags=re.I))
+before_z = len(re.findall(r'ZgotmplZ', s, flags=re.I))
+
+s2 = re.sub(r'\bhref=(["\'])(.*?)\1', repl, s, flags=re.I | re.S)
+
+after_file = len(re.findall(r'\bhref=["\']file:', s2, flags=re.I))
+after_z = len(re.findall(r'ZgotmplZ', s2, flags=re.I))
+
+html_path.write_text(s2, encoding="utf-8")
+
+print(f"hrefs changed: {changed}")
+print(f"ZgotmplZ fixed: {zgotmplz}")
+print(f"file->internal: {file_to_internal}")
+print(f"local->internal: {local_to_internal}")
+print(f"local->online: {local_to_online}")
+print(f"local->#: {local_to_hash}")
+print(f"file hrefs before: {before_file}")
+print(f"file hrefs after:  {after_file}")
+print(f"ZgotmplZ before: {before_z}")
+print(f"ZgotmplZ after:  {after_z}")
+
+# Absolute hard preflight: no href may remain local, relative, file, or ZgotmplZ.
+final = html_path.read_text(encoding="utf-8", errors="replace")
+
+bad = []
+
+for m in re.finditer(r'\bhref=(["\'])(.*?)\1', final, flags=re.I | re.S):
+    href = html.unescape(m.group(2)).strip()
+
+    if not href:
+        continue
+
+    if "ZgotmplZ" in href:
+        bad.append(href)
+        continue
+
+    if href.startswith("#"):
+        continue
+
+    p = urllib.parse.urlsplit(href)
+
+    if p.scheme in safe_schemes:
+        continue
+
+    bad.append(href)
+
+if bad:
+    print()
+    print("❌ Bad hrefs remain before WeasyPrint:")
+    for item in sorted(set(bad))[:160]:
+        print(f"   {item}")
+    sys.exit(1)
+
+print("✅ href sanitizer passed")
+SANITIZE_HREFS_FOR_WEASYPRINT
+}
+
 echo "📄 Rendering PDF..."
 
 BOOK_BASE_URL="$(
@@ -7203,6 +7489,8 @@ print(f"✅ Injected {pad_needed} padding page(s) plus 2 final logo pages")
 INJECT_FINAL_PAGES
 
 echo "📄 Rendering final PDF in one WeasyPrint pass so internal links survive..."
+
+sanitize_hrefs_for_weasyprint "$OUTPUT_HTML"
 
 BOOK_BASE_URL="$(
 python3 - "$OUTPUT_HTML" <<'PY'
