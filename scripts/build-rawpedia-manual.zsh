@@ -4696,6 +4696,14 @@ body {{
   text-align: center;
 }}
 
+.preface-blurb {{
+  width: 4in;
+  margin: 0.18in auto 0 auto;
+  font-size: 11pt;
+  line-height: 1.35;
+  text-align: justify;
+}}
+
 .toc-section-wrapper {{
   page: tocpage;
   break-after: page;
@@ -5246,24 +5254,24 @@ hr {{
     <img src="{html.escape(RT_COVER_URI, quote=True)}" style="width:1.2in; height:1.2in; object-fit:contain; background:#1d1d1d; border-radius:0.16in; padding:0.08in;" alt="Contents">
   </a>
 </p>
-<h1>Reference Versions at Buildtime</h1>
+<h2>Reference Versions at Buildtime</h1>
 <div class="git-version-box preface-git-version">
   <div>{html.escape(RT_GIT_VERSION)}</div>
   <div>{html.escape(RAWPEDIA_GIT_VERSION)}</div>
 </div>
 
 <div class="preface-qr-block">
-  <div class="preface-qr-title">Scan the QR code to go to RawPedia online.</div>
+  <div class="preface-qr-title"><br>Scan the QR code to go to RawPedia online.</div>
   <a href="{html.escape(RAWPEDIA_ONLINE_URL, quote=True)}">
     <img class="preface-qr-image" src="{html.escape(RAWPEDIA_QR_URI, quote=True)}" alt="RawPedia online QR code">
   </a>
   <div class="preface-qr-url">{html.escape(RAWPEDIA_ONLINE_URL)}</div>
 </div>
 
-<p>This manual arranges English RAWPedia pages into a book-like order, beginning with installation and workflow, then moving through raw development, tone, color, detail, geometry, local editing, and advanced reference material.</p>
-<p>The body is set in two columns to make better use of printed page space. The table of contents includes printed page numbers as well as clickable links in PDF readers.</p>
-<p>Missing image references are shown inline as placeholder boxes with the original filename, so broken assets are visible instead of silently disappearing.</p>
-<p>This manual is formatted as a standard 8 × 10 inch trade paperback with bleed, using an 8.125&quot; × 10.25&quot; PDF page size.</p>
+<p class="preface-blurb">This manual arranges English RAWPedia pages into a book-like order, beginning with installation and workflow, then moving through raw development, tone, color, detail, geometry, local editing, and advanced reference material.</p>
+<p class="preface-blurb">The body is set in two columns to make better use of printed page space. The table of contents includes printed page numbers as well as clickable links in PDF readers.</p>
+<p class="preface-blurb">Missing image references are shown inline as placeholder boxes with the original filename, so broken assets are visible instead of silently disappearing.</p>
+<p class="preface-blurb">This manual is formatted as a standard 8 × 10 inch trade paperback with bleed, using an 8.125&quot; × 10.25&quot; PDF page size.</p>
 </section>
 """)
 
