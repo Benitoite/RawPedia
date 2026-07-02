@@ -4670,49 +4670,30 @@ body {{
 }}
 
 .preface {{
-  page: frontmatter;
-  break-after: page;
-  string-set: article "Preface";
+  text-align: center;
 }}
 
-.preface h1 {{
-  font-size: 20pt;
-  margin: 0 0 0.2in 0;
+.preface h1,
+.preface p,
+.preface div {{
+  text-align: center;
 }}
 
-.preface-git-version {{
-  font-size: 15pt;
-  line-height: 1.15;
-  font-weight: bold;
-  margin: 0 0 0.28in 0;
+.preface-git-version,
+.preface-git-version div {{
+  font-family: Menlo, Consolas, "Courier New", monospace;
+  text-align: center;
 }}
 
 .preface-qr-block {{
   text-align: center;
-  margin: 0.22in auto 0.32in auto;
-  break-inside: avoid;
+  margin-left: auto;
+  margin-right: auto;
 }}
 
-.preface-qr-title {{
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 21pt;
-  line-height: 1.15;
-  font-weight: bold;
-  color: #111;
-  margin: 0 0 0.16in 0;
-}}
-
-.preface-qr-image {{
-  width: 2.65in;
-  height: 2.65in;
-  object-fit: contain;
-}}
-
+.preface-qr-title,
 .preface-qr-url {{
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 10pt;
-  color: #555;
-  margin-top: 0.08in;
+  text-align: center;
 }}
 
 .toc-section-wrapper {{
@@ -5282,6 +5263,7 @@ hr {{
 <p>This manual arranges English RAWPedia pages into a book-like order, beginning with installation and workflow, then moving through raw development, tone, color, detail, geometry, local editing, and advanced reference material.</p>
 <p>The body is set in two columns to make better use of printed page space. The table of contents includes printed page numbers as well as clickable links in PDF readers.</p>
 <p>Missing image references are shown inline as placeholder boxes with the original filename, so broken assets are visible instead of silently disappearing.</p>
+<p>This manual is formatted as a standard 8 × 10 inch trade paperback with bleed, using an 8.125&quot; × 10.25&quot; PDF page size.</p>
 </section>
 """)
 
