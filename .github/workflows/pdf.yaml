@@ -358,7 +358,7 @@ jobs:
           print()
           print("sample unresolved image attrs:")
           image_attrs = re.findall(
-              r'(?:src|data-src|data-original|data-lazy-src)=["\\']([^"\\']+\\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\\?[^"\\']*)?)["\\']',
+              r"""(?:src|data-src|data-original|data-lazy-src)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?)["']""",
               s,
               flags=re.I,
           )
