@@ -7267,6 +7267,101 @@ PY
 
 echo "✅ PDF base URL: $BOOK_BASE_URL"
 
+from bs4 import BeautifulSoup
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse, unquote
+import re
+
+def sanitize_pdf_links(book_html_path):
+    html = Path(book_html_path).read_text(encoding="utf-8")
+    soup = BeautifulSoup(html, "html.parser")
+
+    valid_ids = {
+        tag.get("id")
+        for tag in soup.find_all(attrs={"id": True})
+        if tag.get("id")
+    }
+
+    def slugify_anchor(text):
+        text = unquote(text or "")
+        text = text.strip().lower()
+        text = re.sub(r"[^\w\s\-]", "", text)
+        text = re.sub(r"[\s_]+", "-", text)
+        text = re.sub(r"-+", "-", text)
+        return text.strip("-")
+
+    def candidate_ids_from_href(href):
+        parsed = urlparse(href)
+        path = unquote(parsed.path or "")
+        frag = unquote(parsed.fragment or "")
+
+        candidates = []
+
+        if frag:
+            candidates.append(frag)
+            candidates.append(slugify_anchor(frag))
+
+        clean = path.strip("/")
+        if clean:
+            candidates.append(clean)
+            candidates.append(clean.replace("/", "-"))
+            candidates.append(slugify_anchor(clean))
+            candidates.append(slugify_anchor(PurePosixPath(clean).name))
+
+        return [c for c in candidates if c]
+
+    changed = 0
+    removed = 0
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+
+        if not href:
+            del a["href"]
+            removed += 1
+            continue
+
+        parsed = urlparse(href)
+
+        # Keep real web/mail links.
+        if parsed.scheme in {"http", "https", "mailto"}:
+            continue
+
+        # Kill file:// links outright.
+        if parsed.scheme == "file":
+            candidates = candidate_ids_from_href(href)
+        # Internal fragment.
+        elif href.startswith("#"):
+            anchor = href[1:]
+            candidates = [anchor, slugify_anchor(anchor)]
+        # RawPedia relative/site-root links.
+        elif parsed.scheme == "":
+            candidates = candidate_ids_from_href(href)
+        else:
+            del a["href"]
+            removed += 1
+            continue
+
+        target = None
+        for c in candidates:
+            if c in valid_ids:
+                target = c
+                break
+
+        if target:
+            new_href = f"#{target}"
+            if a["href"] != new_href:
+                a["href"] = new_href
+                changed += 1
+        else:
+            del a["href"]
+            removed += 1
+
+    Path(book_html_path).write_text(str(soup), encoding="utf-8")
+    print(f"✅ Sanitized PDF links: rewrote {changed}, removed {removed}")
+    
+sanitize_pdf_links(OUTPUT_HTML)
+
 weasyprint \
   --base-url "$BOOK_BASE_URL" \
   "$OUTPUT_HTML" \
