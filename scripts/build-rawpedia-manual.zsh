@@ -7267,10 +7267,12 @@ PY
 
 echo "✅ PDF base URL: $BOOK_BASE_URL"
 
+python3 - "$OUTPUT_HTML" <<'SANITIZE_PDF_LINKS'
 from bs4 import BeautifulSoup
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, unquote
 import re
+import sys
 
 def sanitize_pdf_links(book_html_path):
     html = Path(book_html_path).read_text(encoding="utf-8")
@@ -7323,18 +7325,14 @@ def sanitize_pdf_links(book_html_path):
 
         parsed = urlparse(href)
 
-        # Keep real web/mail links.
         if parsed.scheme in {"http", "https", "mailto"}:
             continue
 
-        # Kill file:// links outright.
         if parsed.scheme == "file":
             candidates = candidate_ids_from_href(href)
-        # Internal fragment.
         elif href.startswith("#"):
             anchor = href[1:]
             candidates = [anchor, slugify_anchor(anchor)]
-        # RawPedia relative/site-root links.
         elif parsed.scheme == "":
             candidates = candidate_ids_from_href(href)
         else:
@@ -7359,8 +7357,9 @@ def sanitize_pdf_links(book_html_path):
 
     Path(book_html_path).write_text(str(soup), encoding="utf-8")
     print(f"✅ Sanitized PDF links: rewrote {changed}, removed {removed}")
-    
-sanitize_pdf_links(OUTPUT_HTML)
+
+sanitize_pdf_links(sys.argv[1])
+SANITIZE_PDF_LINKS
 
 weasyprint \
   --base-url "$BOOK_BASE_URL" \
