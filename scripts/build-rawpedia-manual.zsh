@@ -2090,6 +2090,47 @@ def qr_case_score(content_rel: str, title: str = "") -> float:
 
     return score
 
+def content_route_stem(content_rel: str) -> str:
+    """
+    Return the article identity for a content source path.
+
+    Correct:
+      Exposure/index.md       -> Exposure
+      Exposure/_index.md      -> Exposure
+      Exposure.md             -> Exposure
+      local_adjustments.md    -> local_adjustments
+
+    Wrong old behavior:
+      Exposure/index.md       -> index
+    """
+    rel = (content_rel or "").replace("\\", "/").strip("/")
+    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+    parts = rel_no_ext.split("/")
+
+    if not parts:
+        return ""
+
+    last = parts[-1].lower()
+
+    if last in {"index", "_index"}:
+        if len(parts) >= 2:
+            return parts[-2]
+        return ""
+
+    return parts[-1]
+
+
+def content_route_no_ext(content_rel: str) -> str:
+    """
+    Return route without extension, dropping trailing /index or /_index.
+    """
+    rel = (content_rel or "").replace("\\", "/").strip("/")
+    rel_no_ext = re.sub(r"\.[^.]+$", "", rel)
+
+    rel_no_ext = re.sub(r"/_?index$", "", rel_no_ext, flags=re.I)
+
+    return rel_no_ext.strip("/")
 
 def qr_best_nonredirect_for_keys(keys: set[str], title: str = "") -> str:
     candidates = []
@@ -2104,6 +2145,14 @@ def qr_best_nonredirect_for_keys(keys: set[str], title: str = "") -> str:
         return ""
 
     nonredirects = [rel for rel in candidates if not qr_rel_is_redirect(rel)]
+
+    nonredirects_not_root_index = [
+        rel for rel in nonredirects
+        if Path(rel).name.lower() != "_index.md"
+    ]
+
+    if nonredirects_not_root_index:
+        nonredirects = nonredirects_not_root_index
 
     if nonredirects:
         nonredirects.sort(key=lambda rel: (-qr_case_score(rel, title), rel))
@@ -5597,17 +5646,21 @@ def is_redirect(content_rel: str) -> bool:
     return bool(redirect_target(content_rel))
 
 def rel_keys(content_rel: str) -> set[str]:
-    rel_no_ext = re.sub(r"\.[^.]+$", "", content_rel)
-    stem = Path(rel_no_ext).name
+    route = content_route_no_ext(content_rel)
+    stem = content_route_stem(content_rel)
     title = source_title(content_rel)
 
     keys = {
         compact_key(content_rel),
-        compact_key(rel_no_ext),
+        compact_key(route),
         compact_key(stem),
         compact_key(stem.replace("_", " ")),
         compact_key(stem.replace("-", " ")),
     }
+
+    # Never let generic index/_index match every page bundle.
+    keys.discard("index")
+    keys.discard("_index")
 
     if title:
         keys.add(compact_key(title))
@@ -5615,7 +5668,7 @@ def rel_keys(content_rel: str) -> set[str]:
         keys.add(compact_key(title.replace(" ", "-")))
 
     return {k for k in keys if k}
-
+    
 def target_keys(target: str) -> set[str]:
     target = html.unescape(target or "").strip()
     target = urllib.parse.unquote(target)
@@ -5704,24 +5757,25 @@ def resolve_rel(old_rel: str) -> str:
             if repaired:
                 return repaired
 
-        # Even if exact is nonredirect, prefer a same-key nonredirect with better casing.
-        repaired = best_nonredirect_for_keys(rel_keys(exact))
-        if repaired:
-            return repaired
-
+        # Exact nonredirect source is already authoritative.
+        # Do NOT "improve" exact Something/index.md into _index.md.
         return exact
 
-    # 2. Not exact: resolve by filename/path keys.
-    old_no_ext = re.sub(r"\.[^.]+$", "", old_rel)
-    stem = Path(old_no_ext).name
+    # 2. Not exact: resolve by article route, not by generic index stem.
+    old_route = content_route_no_ext(old_rel)
+    old_stem = content_route_stem(old_rel)
 
     keys = {
         compact_key(old_rel),
-        compact_key(old_no_ext),
-        compact_key(stem),
-        compact_key(stem.replace("_", " ")),
-        compact_key(stem.replace("-", " ")),
+        compact_key(old_route),
+        compact_key(old_stem),
+        compact_key(old_stem.replace("_", " ")),
+        compact_key(old_stem.replace("-", " ")),
     }
+
+    keys.discard("index")
+    keys.discard("_index")
+    keys = {k for k in keys if k}
 
     candidate = best_nonredirect_for_keys(keys)
 
