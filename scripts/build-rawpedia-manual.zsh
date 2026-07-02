@@ -2084,7 +2084,14 @@ def qr_case_score(content_rel: str, title: str = "") -> float:
 
         if stem == title_cased:
             score += 1000000
+    # Prefer Title_Case_With_Underscores over mixed lowercase variants.
+    # This is the Preview_Modes.md beats Preview_modes.md rule.
+    if re.search(r"_[a-z]", stem):
+        score -= 750000
 
+    if re.search(r"_[A-Z]", stem):
+        score += 750000
+        
     score -= content_rel.count("/") * 100
     score -= len(content_rel) * 0.01
 
@@ -5788,22 +5795,6 @@ def resolve_rel(old_rel: str) -> str:
     if not old_rel:
         return ""
 
-    # 1. Exact Git tree file: if redirect, chase its own target.
-    exact = next((rel for rel in all_rels if rel == old_rel), "")
-
-    if exact:
-        target = redirect_target(exact)
-
-        if target:
-            repaired = best_nonredirect_for_keys(target_keys(target))
-            if repaired:
-                return repaired
-
-        # Exact nonredirect source is already authoritative.
-        # Do NOT "improve" exact Something/index.md into _index.md.
-        return exact
-
-    # 2. Not exact: resolve by article route, not by generic index stem.
     old_route = content_route_no_ext(old_rel)
     old_stem = content_route_stem(old_rel)
 
@@ -5818,6 +5809,27 @@ def resolve_rel(old_rel: str) -> str:
     keys.discard("index")
     keys.discard("_index")
     keys = {k for k in keys if k}
+
+    exact = next((rel for rel in all_rels if rel == old_rel), "")
+
+    # If the exact file is a redirect, chase it.
+    if exact:
+        target = redirect_target(exact)
+
+        if target:
+            repaired = best_nonredirect_for_keys(target_keys(target))
+            if repaired:
+                return repaired
+
+        # Exact nonredirect is not necessarily canonical.
+        # Example:
+        #   Preview_modes.md exists, but Preview_Modes.md is the desired casing.
+        repaired = best_nonredirect_for_keys(keys)
+
+        if repaired:
+            return repaired
+
+        return exact
 
     candidate = best_nonredirect_for_keys(keys)
 
@@ -5980,7 +5992,32 @@ if bad_remaining:
             print(f"   target:  {target}")
         print(f"   url:     {url}")
     sys.exit(1)
+    
+# Hard casing sanity check for known case-collision source files.
+if "Preview_Modes.md" in all_rels:
+    s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
+    bad_preview_urls = [
+        url for url in re.findall(
+            r"https://github\.com/RawTherapee/RawPedia/blob/master/content/[^\"'<>\s]+",
+            s,
+            flags=re.I,
+        )
+        if urllib.parse.unquote(url).endswith("/content/Preview_modes.md")
+    ]
+
+    if bad_preview_urls:
+        print()
+        print("❌ QR GitHub URL still uses wrong Preview_Modes casing:")
+        for url in bad_preview_urls[:20]:
+            print(f"   {url}")
+        print()
+        print("Expected:")
+        print("   https://github.com/RawTherapee/RawPedia/blob/master/content/Preview_Modes.md")
+        sys.exit(1)
+
+    print("✅ Preview_Modes QR casing is correct")
+    
 print("✅ Final QR GitHub URLs point to non-redirect Git source files")
 FINAL_QR_GITHUB_REDIRECT_REPAIR
 
