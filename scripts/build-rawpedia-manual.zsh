@@ -4699,7 +4699,7 @@ body {{
 .preface-blurb {{
   width: 4in;
   margin: 0.18in auto 0 auto;
-  font-size: 11pt;
+  font-size: 9pt;
   line-height: 1.35;
   text-align: justify;
 }}
@@ -5249,7 +5249,7 @@ hr {{
 
     out.write(f"""
 <section class="preface">
-<p style="text-align:center; margin-bottom:0.35in;">
+<p style="text-align:justify; margin-bottom:0.35in;">
   <a href="#contents">
     <img src="{html.escape(RT_COVER_URI, quote=True)}" style="width:1.2in; height:1.2in; object-fit:contain; background:#1d1d1d; border-radius:0.16in; padding:0.08in;" alt="Contents">
   </a>
