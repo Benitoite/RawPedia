@@ -19,6 +19,19 @@ RT_AUTHORS_TXT="$HOME/repo-rt/AUTHORS.txt"
 
 RT_GIT_DIR="$HOME/repo-rt"
 
+GPLV3_LOGO_SVG="$WORK_DIR/gplv3-logo.svg"
+GPLV3_LOGO_URL="https://upload.wikimedia.org/wikipedia/commons/9/93/GPLv3_Logo.svg"
+
+curl -L "$GPLV3_LOGO_URL" -o "$GPLV3_LOGO_SVG"
+
+GPLV3_LOGO_URI="$(
+python3 - "$GPLV3_LOGO_SVG" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve().as_uri())
+PY
+)"
+
 if [[ -d "$HOME/rawpedia/.git" ]]; then
   RAWPEDIA_GIT_DIR="$HOME/rawpedia"
 else
@@ -4446,7 +4459,37 @@ body {{
   color: #000000;
   margin: 0;
   padding: 0.95in;
+  position: relative;
   }}
+
+.cover-gpl-badge {{
+  position: absolute;
+  right: 0.42in;
+  bottom: 0.42in;
+  width: 1.18in;
+  height: 0.46in;
+  border: 1.1pt solid #000000;
+  background: #ffffff;
+  color: #000000;
+  font-family: Helvetica, Arial, sans-serif;
+  text-align: center;
+  box-sizing: border-box;
+  padding-top: 0.065in;
+}}
+
+.cover-gpl-main {{
+  font-size: 13pt;
+  font-weight: bold;
+  line-height: 1;
+}}
+
+.cover-gpl-sub {{
+  font-size: 5.8pt;
+  line-height: 1.1;
+  margin-top: 0.025in;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}}
 
 .cover-icon {{
   width: 2.35in;
@@ -4524,6 +4567,14 @@ body {{
   color: #000000;
   left: 0;
   top: 0;
+}}
+
+.cover-gplv3-logo {{
+  position: absolute;
+  top: 0.38in;
+  right: 0.38in;
+  width: 1.25in;
+  height: auto;
 }}
 
 .cover-date-layer,
@@ -5225,6 +5276,7 @@ hr {{
   <div class="subtitle">A book-style local reference for RawTherapee</div>
 </div>
 <div class="edition">Compiled from a local RAWPedia mirror</div>
+  <img class="cover-gplv3-logo" src="{html.escape(GPLV3_LOGO_URI, quote=True)}" alt="GPLv3 Free Software">
 </section>
 
 <div class="running-book-header">
