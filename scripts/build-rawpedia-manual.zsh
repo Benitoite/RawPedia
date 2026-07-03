@@ -22,6 +22,23 @@ RT_GIT_DIR="$HOME/repo-rt"
 GPLV3_LOGO_SVG="$WORK_DIR/gplv3-logo.svg"
 GPLV3_LOGO_URL="https://upload.wikimedia.org/wikipedia/commons/9/93/GPLv3_Logo.svg"
 
+if [[ "${RAWPEDIA_KEEP_BOOK_CACHE:-0}" != "1" ]]; then
+  echo "Cleaning old generated book reports and folders..."
+
+  rm -f "$WORK_DIR/book.html"
+  rm -f "$WORK_DIR"/*.txt(N)
+  rm -f "$WORK_DIR"/*.svg(N)
+  rm -f "$WORK_DIR"/*.png(N)
+  rm -f "$WORK_DIR"/*.pdf(N)
+  rm -f "$WORK_DIR"/*.json(N)
+  rm -f "$WORK_DIR"/*.log(N)
+
+  rm -rf "$WORK_DIR/article-qrs"
+  rm -rf "$WORK_DIR/online-image-fallbacks"
+else
+  echo "Keeping old generated book cache because RAWPEDIA_KEEP_BOOK_CACHE=1"
+fi
+
 mkdir -p "$WORK_DIR"
 
 if [[ ! -s "$GPLV3_LOGO_SVG" ]]; then
@@ -50,23 +67,6 @@ do
 done
 
 mkdir -p "$WORK_DIR"
-
-if [[ "${RAWPEDIA_KEEP_BOOK_CACHE:-0}" != "1" ]]; then
-  echo "Cleaning old generated book reports and folders..."
-
-  rm -f "$WORK_DIR/book.html"
-  rm -f "$WORK_DIR"/*.txt(N)
-  rm -f "$WORK_DIR"/*.svg(N)
-  rm -f "$WORK_DIR"/*.png(N)
-  rm -f "$WORK_DIR"/*.pdf(N)
-  rm -f "$WORK_DIR"/*.json(N)
-  rm -f "$WORK_DIR"/*.log(N)
-
-  rm -rf "$WORK_DIR/article-qrs"
-  rm -rf "$WORK_DIR/online-image-fallbacks"
-else
-  echo "Keeping old generated book cache because RAWPEDIA_KEEP_BOOK_CACHE=1"
-fi
 
 echo "Building RawTherapee Manual..."
 
