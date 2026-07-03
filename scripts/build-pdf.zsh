@@ -2785,7 +2785,8 @@ def is_probably_english_page(path: Path, title: str, text: str) -> bool:
     return True
 
 def clean_links(s: str) -> str:
-    s = re.sub(r'href=(["\"])#ZgotmplZ\1', 'href="#"', s, flags=re.I)
+    s = re.sub(r'href=(["\'])#ZgotmplZ\1', r'href=\1#\1', s, flags=re.I)
+    s = re.sub(r"#ZgotmplZ\b", "#", s, flags=re.I)
     return s
 
 def page_kind(title: str, rel: str) -> tuple[int, str]:
@@ -3765,42 +3766,81 @@ for page in all_pages_raw:
     content = clean_links(content)
     
     def strip_duplicate_article_heading(content: str, title: str) -> str:
-        title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
+        title_plain = re.sub(r"\s+", " ", html.unescape(title or "")).strip().lower()
+
+        if not title_plain:
+            return content
 
         def clean_text(s: str) -> str:
             s = re.sub(r"<[^>]+>", " ", s)
             s = html.unescape(s)
             return re.sub(r"\s+", " ", s).strip().lower()
 
-        # Remove leading empty anchors/wrappers before the real duplicate heading.
-        content = re.sub(
-            r"""^\s*(?:<a\b[^>]*(?:id|name)=["'][^"']+["'][^>]*>\s*</a>\s*)+""",
-            "",
+        def same_or_starts_with_title(s: str) -> bool:
+            t = clean_text(s)
+
+            if t == title_plain:
+                return True
+
+            # Catch cases like "Clipping Indication [edit]" or
+            # "Clipping Indication Contents..."
+            return t.startswith(title_plain + " ")
+
+        # Temporarily remove article-local TOC from the very front, if present.
+        toc_match = re.match(
+            r"""^\s*<div\b[^>]*class=["'][^"']*\barticle-local-toc\b[^"']*["'][^>]*>.*?</div>\s*""",
             content,
             flags=re.I | re.S,
         )
 
-        # Remove first visible heading if it matches the article title.
+        leading_toc = ""
+
+        if toc_match:
+            leading_toc = toc_match.group(0)
+            content = content[toc_match.end():].lstrip()
+
+        # Remove leading invisible anchors / empty wrappers.
+        while True:
+            before = content
+            content = re.sub(
+                r"""^\s*(?:<a\b[^>]*(?:id|name)=["'][^"']+["'][^>]*>\s*</a>\s*)+""",
+                "",
+                content,
+                flags=re.I | re.S,
+            )
+            content = re.sub(
+                r"""^\s*<(?:p|div|span)\b[^>]*>\s*(?:&nbsp;|\u00a0|\s|<br\s*/?>)*</(?:p|div|span)>\s*""",
+                "",
+                content,
+                flags=re.I | re.S,
+            )
+
+            if content == before:
+                break
+
+        # Remove first visible heading if it is the duplicated article title.
         m = re.match(
             r"""^\s*<h[1-6]\b[^>]*>.*?</h[1-6]>\s*""",
             content,
             flags=re.I | re.S,
         )
 
-        if m and clean_text(m.group(0)) == title_plain:
-            return content[m.end():].lstrip()
+        if m and same_or_starts_with_title(m.group(0)):
+            content = content[m.end():].lstrip()
 
-        # Also catch title duplicated as a first paragraph/div.
-        m = re.match(
-            r"""^\s*<(p|div)\b[^>]*>.*?</\1>\s*""",
-            content,
-            flags=re.I | re.S,
-        )
+        else:
+            # Also catch title duplicated as first paragraph/div/span.
+            m = re.match(
+                r"""^\s*<(p|div|span)\b[^>]*>.*?</\1>\s*""",
+                content,
+                flags=re.I | re.S,
+            )
 
-        if m and clean_text(m.group(0)) == title_plain:
-            return content[m.end():].lstrip()
+            if m and same_or_starts_with_title(m.group(0)):
+                content = content[m.end():].lstrip()
 
-        return content
+        # Put the local TOC back at the front.
+        return leading_toc + content
         
     if is_redirect_page_text(content, title):
         suppressed_redirects.append(rel)
@@ -3817,6 +3857,7 @@ for page in all_pages_raw:
         content = article_toc + "\n" + content
 
     content = strip_empty_leading_blocks(content)
+    content = strip_duplicate_article_heading(content, title)
 
     if not has_meaningful_content(content, title):
         continue
@@ -4500,30 +4541,25 @@ body {{
 }}
 
 .article-github-qr {{
-  break-inside: avoid;
-  margin: 0.18in 0 0 0;
-  padding: 0.08in 0.1in;
-  border-top: 0.45pt solid #bbb;
-  font-family: Helvetica, Arial, sans-serif;
-  font-size: 6.7pt;
-  line-height: 1.15;
-  color: #555;
   text-align: center;
+  margin: 0.18in auto 0.28in auto;
+  break-inside: avoid;
+}}
+
+.article-github-qr img {{
+  display: block;
+  width: 1in;
+  height: 1in;
+  max-width: 1in;
+  max-height: 1in;
+  margin: 0 auto;
+  object-fit: contain;
 }}
 
 .article-github-qr-title {{
   font-weight: bold;
   color: #333;
   margin-bottom: 0.045in;
-}}
-
-.article-github-qr img {{
-  width: 0.72in;
-  height: 0.72in;
-  object-fit: contain;
-  background: transparent;
-  display: block;
-  margin: 0 auto 0.045in auto;
 }}
 
 .article-github-qr-url {{
@@ -6733,6 +6769,7 @@ OUTPUT_HTML = Path(sys.argv[1]).resolve()
 RAWPEDIA_ONLINE_URL = sys.argv[2].rstrip("/")
 
 s = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
+s = re.sub(r"#ZgotmplZ\b", "#", s, flags=re.I)
 
 download_exts = {
     ".pp3", ".pdf", ".zip", ".7z", ".gz", ".bz2", ".xz",
