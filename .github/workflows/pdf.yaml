@@ -1,4 +1,4 @@
-name: Build RawTherapee Manual PDF
+name: Build RawPedia PDF
 
 on:
   workflow_dispatch:
@@ -24,9 +24,20 @@ on:
         required: true
         default: scripts/build-rawpedia-manual.zsh
       rawpedia_qr_jobs:
-        description: Parallel QR jobs, if supported by the script
+        description: QR generation jobs
         required: true
         default: "4"
+
+  push:
+    tags:
+      - "*"
+
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
+      - main
 
 permissions:
   contents: read
@@ -34,6 +45,11 @@ permissions:
 jobs:
   build-manual:
     name: Build RawTherapee Manual
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+
     runs-on: macos-latest
 
     steps:
@@ -43,16 +59,16 @@ jobs:
       - name: Checkout RawTherapee
         uses: actions/checkout@v4
         with:
-          repository: ${{ inputs.rawtherapee_repository }}
-          ref: ${{ inputs.rawtherapee_ref }}
+          repository: ${{ inputs.rawtherapee_repository || 'Beep6581/RawTherapee' }}
+          ref: ${{ inputs.rawtherapee_ref || 'dev' }}
           path: repo-rt
           fetch-depth: 0
 
       - name: Checkout RawPedia
         uses: actions/checkout@v4
         with:
-          repository: ${{ inputs.rawpedia_repository }}
-          ref: ${{ inputs.rawpedia_ref }}
+          repository: ${{ inputs.rawpedia_repository || 'rawtherapee/rawpedia' }}
+          ref: ${{ inputs.rawpedia_ref || 'master' }}
           path: RawPedia
           submodules: recursive
           fetch-depth: 0
@@ -106,8 +122,6 @@ jobs:
           else
             echo "❌ Expected theme asset directory missing:"
             echo "themes/hugo-bootstrap-bare/assets"
-            echo
-            echo "---- themes directory ----"
             find "$GITHUB_WORKSPACE/RawPedia/themes" -maxdepth 5 -type d | sort || true
             exit 1
           fi
@@ -129,9 +143,6 @@ jobs:
           echo "---- Hugo output root ----"
           ls -la "$GITHUB_WORKSPACE/RawPedia/Public"
 
-          echo "---- First generated HTML files ----"
-          find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | sort | head -120 || true
-
           echo "---- HTML count ----"
           HTML_COUNT="$(find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "*.html" | wc -l | tr -d ' ')"
           echo "HTML_COUNT=$HTML_COUNT"
@@ -141,77 +152,16 @@ jobs:
             exit 1
           fi
 
-          echo "---- Sanity check generated page content ----"
-          FIRST_ENGLISH_PAGE="$(
-            find "$GITHUB_WORKSPACE/RawPedia/Public" -type f -name "index.html" \
-              ! -path "*/fr/*" \
-              ! -path "*/es/*" \
-              ! -path "*/it/*" \
-              ! -path "*/jp/*" \
-              ! -path "*/ja/*" \
-              ! -path "*/pt/*" \
-              ! -path "*/de/*" \
-              ! -path "*/ca/*" \
-              ! -path "*/ct/*" \
-              ! -path "*/zh/*" \
-              ! -path "*/cn/*" \
-              ! -path "*/ru/*" \
-              ! -path "*/nl/*" \
-              ! -path "*/pl/*" \
-              ! -path "*/tr/*" \
-              ! -path "*/index.fr/*" \
-              ! -path "*/index.es/*" \
-              ! -path "*/index.it/*" \
-              ! -path "*/index.jp/*" \
-              ! -path "*/index.ja/*" \
-              ! -path "*/index.pt/*" \
-              ! -path "*/index.de/*" \
-              ! -path "*/index.ca/*" \
-              ! -path "*/index.ct/*" \
-              ! -path "*/index.zh/*" \
-              ! -path "*/index.cn/*" \
-              ! -path "*/index.ru/*" \
-              ! -path "*/index.nl/*" \
-              ! -path "*/index.pl/*" \
-              ! -path "*/index.tr/*" \
-              | sort \
-              | head -1 || true
-          )"
-
-          echo "FIRST_ENGLISH_PAGE=$FIRST_ENGLISH_PAGE"
-
-          if [[ -n "$FIRST_ENGLISH_PAGE" ]]; then
-            wc -c "$FIRST_ENGLISH_PAGE"
-
-            PLAIN_LEN="$(
-              perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
-                | wc -c \
-                | tr -d ' '
-            )"
-
-            echo "PLAIN_LEN=$PLAIN_LEN"
-            echo "PLAIN_HEAD:"
-            perl -0pe 's/<script\b.*?<\/script>/ /gis; s/<style\b.*?<\/style>/ /gis; s/<[^>]+>/ /g; s/\s+/ /g' "$FIRST_ENGLISH_PAGE" \
-              | cut -c 1-700 || true
-          fi
-
       - name: Prepare local paths expected by script
         run: |
           set -euo pipefail
 
-          echo "HOME=$HOME"
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-
-          rm -rf "$HOME/repo-rt"
-          rm -rf "$HOME/RawPedia"
-          rm -rf "$HOME/rawpedia"
+          rm -rf "$HOME/repo-rt" "$HOME/RawPedia" "$HOME/rawpedia"
 
           ln -s "$GITHUB_WORKSPACE/repo-rt" "$HOME/repo-rt"
           ln -s "$GITHUB_WORKSPACE/RawPedia" "$HOME/RawPedia"
 
-          test -d "$HOME/repo-rt"
           test -d "$HOME/repo-rt/.git"
-          test -d "$HOME/RawPedia"
           test -d "$HOME/RawPedia/.git"
           test -d "$HOME/RawPedia/Public"
           test -d "$HOME/RawPedia/content"
@@ -219,17 +169,9 @@ jobs:
           test -f "$HOME/repo-rt/rtdata/images/rawtherapee.ico"
           test -f "$HOME/repo-rt/AUTHORS.txt"
 
-          echo "---- expected local paths ----"
-          ls -la "$HOME"
-          ls -la "$HOME/repo-rt/tools/osx/rawtherapee.icns"
-          ls -la "$HOME/repo-rt/rtdata/images/rawtherapee.ico"
-
-          echo "---- RawPedia/Public sample ----"
-          find "$HOME/RawPedia/Public" -maxdepth 2 -mindepth 1 | sort | sed -n '1,80p'
-
       - name: Build PDF manual
         env:
-          RAWPEDIA_QR_JOBS: ${{ inputs.rawpedia_qr_jobs }}
+          RAWPEDIA_QR_JOBS: ${{ inputs.rawpedia_qr_jobs || '4' }}
           SOURCE_DIR: ${{ github.workspace }}/RawPedia/Public
           CONTENTS_DIR: ${{ github.workspace }}/RawPedia/content
           RT_GIT_DIR: ${{ github.workspace }}/repo-rt
@@ -237,6 +179,7 @@ jobs:
           RT_COVER_ICNS: ${{ github.workspace }}/repo-rt/tools/osx/rawtherapee.icns
           RT_HEADER_ICO: ${{ github.workspace }}/repo-rt/rtdata/images/rawtherapee.ico
           RT_AUTHORS_TXT: ${{ github.workspace }}/repo-rt/AUTHORS.txt
+          SCRIPT_PATH: ${{ inputs.script_path || 'scripts/build-rawpedia-manual.zsh' }}
         run: |
           set -euo pipefail
 
@@ -263,153 +206,23 @@ jobs:
           echo "CONTENTS_DIR=$CONTENTS_DIR"
           echo "RT_GIT_DIR=$RT_GIT_DIR"
           echo "RAWPEDIA_GIT_DIR=$RAWPEDIA_GIT_DIR"
-          echo "RT_COVER_ICNS=$RT_COVER_ICNS"
-          echo "RT_HEADER_ICO=$RT_HEADER_ICO"
-          echo "RT_AUTHORS_TXT=$RT_AUTHORS_TXT"
+          echo "SCRIPT_PATH=$SCRIPT_PATH"
 
-          echo "---- HTML files passed to manual script ----"
-          python3 - "$SOURCE_DIR" <<'PY'
-          import sys
-          from pathlib import Path
-
-          source = Path(sys.argv[1])
-          files = sorted(source.rglob("*.html"))
-
-          for p in files[:120]:
-              print(p)
-          PY
-
-          chmod +x "${{ inputs.script_path }}"
+          chmod +x "$SCRIPT_PATH"
 
           mkdir -p rawpedia_book
-          
-          if ! "./${{ inputs.script_path }}" 2>&1 | tee rawpedia_book/build-script.log; then
+
+          if ! "./$SCRIPT_PATH" 2>&1 | tee rawpedia_book/build-script.log; then
             echo "❌ Manual build failed."
             echo
-          echo "---- build-script.log tail ----"
-          tail -240 rawpedia_book/build-script.log || true
-          echo
-            set +o pipefail
-
+            echo "---- build-script.log tail ----"
+            tail -240 rawpedia_book/build-script.log || true
+            echo
             echo "---- workspace root ----"
             ls -la || true
-
             echo
             echo "---- rawpedia_book directory ----"
             ls -la rawpedia_book || true
-
-            echo
-            echo "---- diagnostics ----"
-            python3 - <<'PY' || true
-          from pathlib import Path
-          import re
-
-          def show_file(path, max_lines=160):
-              p = Path(path)
-              print()
-              print(f"---- {path} ----")
-              if not p.exists():
-                  print("[missing]")
-                  return
-
-              try:
-                  lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-              except Exception as e:
-                  print(f"[could not read: {e}]")
-                  return
-
-              for line in lines[:max_lines]:
-                  print(line)
-
-              if len(lines) > max_lines:
-                  print(f"... [{len(lines) - max_lines} more lines]")
-
-          show_file("rawpedia_book/pages-all.txt", 160)
-          show_file("rawpedia_book/article-github-source-map.txt", 260)
-          show_file("rawpedia_book/redirect-route-map.txt", 260)
-          show_file("rawpedia_book/suppressed-redirect-pages.txt", 200)
-          show_file("rawpedia_book/suppressed-main-pages.txt", 200)
-          show_file("rawpedia_book/contributors.txt", 120)
-          show_file("rawpedia_book/authors.txt", 120)
-          show_file("rawpedia_book/technical-index-terms.txt", 220)
-          show_file("rawpedia_book/missing-images.txt", 220)
-
-          book = Path("rawpedia_book/book.html")
-
-          print()
-          print("---- image/link refs in generated book.html ----")
-
-          if not book.exists():
-              print("[rawpedia_book/book.html missing]")
-              raise SystemExit
-
-          s = book.read_text(encoding="utf-8", errors="replace")
-
-          img_tags = len(re.findall(r"<img\b", s, flags=re.I))
-          src_file_refs = len(re.findall(r'''src=["']file://''', s, flags=re.I))
-          src_http_refs = len(re.findall(r'''src=["']https?://''', s, flags=re.I))
-          href_internal_refs = len(re.findall(r'''href=["']#''', s, flags=re.I))
-          href_github_refs = len(re.findall(r"https://github\.com/RawTherapee/RawPedia", s))
-          missing_image_boxes = len(re.findall(r'''class=["']missing-image["']''', s, flags=re.I))
-          
-          print(f"img tags: {img_tags}")
-          print(f"src file refs: {src_file_refs}")
-          print(f"src http refs: {src_http_refs}")
-          print(f"href internal refs: {href_internal_refs}")
-          print(f"href github refs: {href_github_refs}")
-          print(f"missing-image boxes: {missing_image_boxes}")
-
-          print()
-          print("sample unresolved image attrs:")
-          image_attrs = re.findall(
-              r"""(?:src|data-src|data-original|data-lazy-src)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(?:\?[^"']*)?)["']""",
-              s,
-              flags=re.I,
-          )
-          unresolved = [
-              x for x in image_attrs
-              if not x.startswith("file://") and not x.startswith("data:")
-          ]
-
-          for item in unresolved[:100]:
-              print(item)
-
-          print()
-          print("sample unresolved image attrs:")
-          
-          img_tags = re.findall(r"<img\b[^>]*>", s, flags=re.I | re.S)
-          unresolved = []
-          
-          for tag in img_tags:
-              m = re.search("""\\bsrc\\s*=\\s*(['"])(.*?)\\1""", tag, flags=re.I | re.S)
-              if not m:
-                  continue
-          
-              src = m.group(2).strip()
-          
-              if src.startswith(("file://", "data:")):
-                  continue
-          
-              if re.search(r"\.(png|jpg|jpeg|gif|svg|webp|tif|tiff|bmp|ico)(\?|$)", src, flags=re.I):
-                  unresolved.append(src)
-          
-          for item in unresolved[:100]:
-              print(item)
-          
-          print()
-          print("sample github QR hrefs:")
-          
-          github_hits = re.findall(
-              """https://github\\.com/RawTherapee/RawPedia[^"'<> ]+""",
-              s,
-          )
-          
-          for item in github_hits[:100]:
-              print(item)
-          PY
-
-            set -o pipefail
-
             exit 1
           fi
 
@@ -437,39 +250,40 @@ jobs:
             echo "❌ PDF page count is not divisible by 4."
             exit 1
           fi
-          echo "---- Selected article count from generated HTML ----"
+
           echo "---- Selected article count from generated HTML ----"
           ARTICLE_COUNT="$(
             python3 - <<'PY'
           from pathlib import Path
           from html.parser import HTMLParser
-          
+
           class ArticleCounter(HTMLParser):
               def __init__(self):
                   super().__init__()
                   self.count = 0
-          
+
               def handle_starttag(self, tag, attrs):
                   if tag.lower() != "section":
                       return
-          
+
                   attrs = dict(attrs)
                   section_id = attrs.get("id", "")
                   classes = attrs.get("class", "").split()
-          
+
                   if section_id.startswith("page-") and "article" in classes:
                       self.count += 1
-          
+
           s = Path("rawpedia_book/book.html").read_text(encoding="utf-8", errors="replace")
-          
+
           parser = ArticleCounter()
           parser.feed(s)
-          
+
           print(parser.count)
           PY
           )"
+
           echo "ARTICLE_COUNT=$ARTICLE_COUNT"
-          
+
           if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
             echo "❌ Manual HTML contains no article sections."
             exit 1
@@ -480,6 +294,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rawtherapee-manual-pdf
-          path: |
-            rawtherapee_manual.pdf
+          path: rawtherapee_manual.pdf
           if-no-files-found: warn
