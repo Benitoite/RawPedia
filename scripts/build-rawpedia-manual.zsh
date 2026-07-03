@@ -3964,6 +3964,7 @@ if not authors_display:
     authors_display = "No AUTHORS.txt data was found at ~/repo-rt/AUTHORS.txt."
 
 license_html = license_text_to_html_paragraphs(license_text)
+RT_VERSION_DISPLAY = RT_GIT_VERSION.split(":", 1)[-1].strip()
 
 with OUTPUT_HTML.open("w", encoding="utf-8") as out:
     out.write(f"""<!doctype html>
@@ -4467,7 +4468,23 @@ body {{
   position: relative;
   width: 100%;
   height: 1.18in;
-  margin: 0 0 0.15in 0;
+  margin: 0 0 0.22in 0;
+}}
+
+.cover-version {{
+  font-family: Menlo, Consolas, "Courier New", monospace;
+  font-size: 13pt;
+  font-weight: bold;
+  color: #000000;
+  text-align: center;
+  margin: 0 0 0.22in 0;
+}}
+
+.cover-date-stack {{
+  position: relative;
+  width: 100%;
+  height: 0.34in;
+  margin: 0 0 0.18in 0;
 }}
 
 .cover-title-layer,
@@ -4507,13 +4524,6 @@ body {{
   color: #000000;
   left: 0;
   top: 0;
-}}
-
-.cover-date-stack {{
-  position: relative;
-  width: 100%;
-  height: 0.34in;
-  margin: 0 0 0.18in 0;
 }}
 
 .cover-date-layer,
@@ -4582,15 +4592,6 @@ body {{
   text-align: center;
   margin: 0.08in auto 0 auto;
   padding: 0.07in 0.12in;
-}}
-
-.cover-version {{
-  font-family: Menlo, Consolas, "Courier New", monospace;
-  font-size: 13pt;
-  font-weight: bold;
-  color: #000000;
-  margin: 0 0 0.08in 0;
-  text-align: center;
 }}
 
 .half-title-git-version {{
@@ -5213,7 +5214,7 @@ hr {{
   <div class="cover-title-layer cover-title-back-1">RawTherapee Manual</div>
   <h1 class="cover-title-front">RawTherapee Manual</h1>
 </div>
-<div class="cover-version">{html.escape(RT_GIT_VERSION)}</div>
+<div class="cover-version">{html.escape(RT_VERSION_DISPLAY)}</div>
 <div class="cover-date-stack" aria-label="{html.escape(BUILD_DATE)}">
   <div class="cover-date-layer cover-date-back">{html.escape(BUILD_DATE)}</div>
   <div class="cover-date">{html.escape(BUILD_DATE)}</div>
