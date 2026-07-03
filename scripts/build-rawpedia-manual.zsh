@@ -4501,21 +4501,6 @@ body {{
   position: relative;
   }}
 
-.cover-gpl-badge {{
-  position: absolute;
-  right: 0.42in;
-  bottom: 0.42in;
-  width: 1.18in;
-  height: 0.46in;
-  border: 1.1pt solid #000000;
-  background: #ffffff;
-  color: #000000;
-  font-family: Helvetica, Arial, sans-serif;
-  text-align: center;
-  box-sizing: border-box;
-  padding-top: 0.065in;
-}}
-
 .cover-gpl-main {{
   font-size: 13pt;
   font-weight: bold;
@@ -4555,10 +4540,10 @@ body {{
 
 .cover-title-front {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 36pt;
+  font-size: 42pt;
   line-height: 1.02;
   font-weight: bold;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   margin: 0;
   text-align: center;
   color: #000000;
@@ -4575,8 +4560,8 @@ body {{
 
 .rainbow-letter-glow {{
   position: absolute;
-  left: 1.15pt;
-  top: 1.15pt;
+  left: 1.85pt;
+  top: 1.85pt;
   color: var(--glow);
   z-index: 0;
 }}
@@ -4589,7 +4574,7 @@ body {{
 
 .rainbow-title-space {{
   display: inline-block;
-  width: 0.22em;
+  width: -0.1em;
 }}
 
 .cover-version {{
@@ -4615,7 +4600,7 @@ body {{
   top: 0;
   width: 100%;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 36pt;
+  font-size: 42pt;
   line-height: 1.02;
   font-weight: bold;
   letter-spacing: -0.02em;
@@ -5397,7 +5382,7 @@ hr {{
 
     out.write(f"""
 <section class="half-title">
-<h1>RawTherapee Manual</h1>
+<h1 class="rainbow-title half-title-rainbow-title">{COVER_TITLE_HTML}</h1>
 <p>A local manual generated from RAWPedia.</p>
 
 <div class="git-version-box half-title-git-version">
