@@ -5533,20 +5533,20 @@ def strip_duplicate_article_heading(content: str, title: str) -> str:
 
     return content
 
-    current_section = None
-    part_num = 0
-    article_num = 0
+current_section = None
+part_num = 0
+article_num = 0
 
-    for info in infos:
-        section = info["section"]
-        section_id = info["section_id"]
+for info in infos:
+    section = info["section"]
+    section_id = info["section_id"]
 
-        if section != current_section:
-            current_section = section
-            part_num += 1
-            part_subtoc = build_part_subtoc(section)
+    if section != current_section:
+        current_section = section
+        part_num += 1
+        part_subtoc = build_part_subtoc(section)
 
-            out.write(f"""
+        out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5562,28 +5562,28 @@ def strip_duplicate_article_heading(content: str, title: str) -> str:
 </div>
 </section>
 """)
-        else:
+    else:
             out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
 """)
 
-        print(f"  ➜ [{section}] {info['title']}")
+    print(f"  ➜ [{section}] {info['title']}")
 
-        article_num += 1
-        article_classes = ["article"]
+    article_num += 1
+    article_classes = ["article"]
 
-        if article_num == 1:
-            article_classes.append("first-article")
-        elif article_is_major(info["content"], info["title"]):
-            article_classes.append("major-article")
-        else:
-            article_classes.append("short-article")
+    if article_num == 1:
+        article_classes.append("first-article")
+    elif article_is_major(info["content"], info["title"]):
+        article_classes.append("major-article")
+    else:
+        article_classes.append("short-article")
 
-        article_class = " ".join(article_classes)
+    article_class = " ".join(article_classes)
 
-        out.write(f"""
+    out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
