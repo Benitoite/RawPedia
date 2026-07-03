@@ -7765,14 +7765,14 @@ fi
 
 PAGE_COUNT="$(qpdf --show-npages "$OUTPUT_PDF")"
 
-# We are always appending two final pages:
-#   1. blank page with 1 inch rtdata icon
-#   2. final page with 5 inch rtdata icon
+FRONT_COVER_PAGE_COUNT=1
+BACK_COVER_PAGE_COUNT=1
 FINAL_PAGE_COUNT=2
 
-# Padding must happen BEFORE those final pages.
-# Compute padding so: original + padding + 2 final pages is divisible by 4.
-REMAINDER=$(( (PAGE_COUNT + FINAL_PAGE_COUNT) % 4 ))
+INSIDE_BEFORE_FINAL=$(( PAGE_COUNT - FRONT_COVER_PAGE_COUNT ))
+FINAL_INSIDE_PAGE_COUNT=$(( FINAL_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
+
+REMAINDER=$(( (INSIDE_BEFORE_FINAL + FINAL_INSIDE_PAGE_COUNT) % 4 ))
 
 if (( REMAINDER == 0 )); then
   PAD_NEEDED=0
@@ -7781,11 +7781,12 @@ else
 fi
 
 EXPECTED_FINAL_TOTAL=$(( PAGE_COUNT + PAD_NEEDED + FINAL_PAGE_COUNT ))
+EXPECTED_FINAL_INSIDE=$(( EXPECTED_FINAL_TOTAL - FRONT_COVER_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
 
 echo "📄 Original page count: $PAGE_COUNT"
-echo "📄 Reserved final icon pages: $FINAL_PAGE_COUNT"
-echo "📄 Padding blankies needed before final pages: $PAD_NEEDED"
+echo "📄 Padding blankies needed inside: $PAD_NEEDED"
 echo "📄 Expected final page count: $EXPECTED_FINAL_TOTAL"
+echo "📄 Expected final inside page count: $EXPECTED_FINAL_INSIDE"
 
 echo "📄 Injecting final publisher pages into main HTML..."
 
@@ -7967,13 +7968,19 @@ if [[ "$FINAL_PAGE_TOTAL" != "$EXPECTED_FINAL_TOTAL" ]]; then
   exit 1
 fi
 
-if (( FINAL_PAGE_TOTAL % 4 != 0 )); then
-  echo "❌ Final PDF page count is not divisible by 4."
+FINAL_INSIDE_COUNT=$(( FINAL_PAGE_TOTAL - FRONT_COVER_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
+
+if (( FINAL_INSIDE_COUNT % 4 != 0 )); then
+  echo "❌ Final inside page count is not divisible by 4."
+  echo "   final total:   $FINAL_PAGE_TOTAL"
+  echo "   front cover:   $FRONT_COVER_PAGE_COUNT"
+  echo "   back cover:    $BACK_COVER_PAGE_COUNT"
+  echo "   inside pages:  $FINAL_INSIDE_COUNT"
   exit 1
 fi
 
-echo "Final PDF includes original + padding + final logo pages."
-echo "Final PDF page count is divisible by 4."
+echo "Final PDF includes front cover + inside signatures + back cover."
+echo "Final inside page count is divisible by 4."
 
 if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
   echo "⚠️ Some images were still missing."
