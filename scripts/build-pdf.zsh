@@ -4250,12 +4250,12 @@ h1, h2, h3, h4, h5, h6,
   size: 8.125in 10.25in;
   margin: 0.805in;
 
-  @top-right {{ content: element(bookHeader); width: 2.1in; }}
+  @top-right {{ content: ""; }}
   @top-center {{
     content: "RawTherapee Manual";
     font-family: Helvetica, Arial, sans-serif;
-    font-size: 7.5pt;
-    color: #666;
+    font-size: 8.5pt;
+    color: #765;
   }}
   @top-left {{ content: ""; }}
 
@@ -5013,7 +5013,7 @@ body {{
 .article {{
   page: articlepage;
   break-before: auto;
-  margin-top: 1.35in;
+  margin-top: 0.9in;
   string-set: article attr(data-title);
 }}
 
@@ -5285,13 +5285,13 @@ pre code {{
 .article-body pre {{
   white-space: pre-wrap !important;
   overflow-wrap: anywhere !important;
-  word-break: break-word !important;
+  word-break: normal !important;
 }}
 
 .article-body code {{
   white-space: normal !important;
   overflow-wrap: anywhere !important;
-  word-break: break-word !important;
+  word-break: normal !important;
 }}
 
 .article-body pre code {{
