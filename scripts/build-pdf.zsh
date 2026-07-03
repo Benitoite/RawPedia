@@ -4079,15 +4079,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 <title>RawTherapee Manual</title>
 <style>
 
-.cover-title-front,
-.rainbow-title,
-.rainbow-letter,
-.rainbow-letter-glow,
-.rainbow-letter-front,
-.half-title-rainbow-title {{
-  font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
-  font-weight: 700;
-}}
+h1, h2, h3, h4, h5, h6,
 .cover-title-front,
 .rainbow-title,
 .rainbow-letter,
@@ -4099,6 +4091,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 .cover-date-layer,
 .subtitle-layer,
 .cover .subtitle,
+.half-title-rainbow-title,
 .half-title h1,
 .preface h1,
 .preface h2,
