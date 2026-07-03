@@ -4075,21 +4075,25 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-bottom: 0.72in;
   margin-left: 0.5in;
 
-  @top-left {{
-    content: element(bookHeader);
-    width: 2.1in;
-  }}
-
-  @top-center {{
-    content: element(sectionLink);
-  }}
-
+  @top-left {{ content: element(bookHeader); width: 2.1in; }}
+  @top-center {{ content: element(sectionLink); }}
   @top-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
     color: #555;
   }}
+
+  @bottom-left {{ content: ""; }}
+  @bottom-center {{ content: ""; }}
+  @bottom-right {{ content: ""; }}
+}}
+
+@page :left {{
+  margin-top: 0.72in;
+  margin-right: 0.4in;
+  margin-bottom: 0.72in;
+  margin-left: 0.8in;
 
   @bottom-left {{
     content: counter(page);
@@ -4098,20 +4102,9 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
     color: #555;
   }}
 
-  @bottom-center {{
+  @bottom-right {{
     content: element(articleFooter);
   }}
-
-  @bottom-right {{
-    content: "";
-  }}
-}}
-
-@page :left {{
-  margin-top: 0.72in;
-  margin-right: 0.4in;
-  margin-bottom: 0.72in;
-  margin-left: 0.8in;
 }}
 
 @page :right {{
@@ -4119,6 +4112,17 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.8in;
   margin-bottom: 0.72in;
   margin-left: 0.4in;
+
+  @bottom-left {{
+    content: element(articleFooter);
+  }}
+
+  @bottom-right {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
 }}
 
 @page cover {{
