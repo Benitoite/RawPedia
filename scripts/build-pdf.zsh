@@ -5347,6 +5347,26 @@ a {{
   border-radius: 0;
 }}
 
+.article-body .article-local-toc,
+.article-body .article-local-toc *,
+.article-body h1,
+.article-body h2,
+.article-body h3,
+.article-body h4,
+.article-body h5,
+.article-body h6,
+.article-body h1 *,
+.article-body h2 *,
+.article-body h3 *,
+.article-body h4 *,
+.article-body h5 *,
+.article-body h6 * {{
+  background: transparent !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-radius: 0 !important;
+}}
+
 hr {{
   border: none;
   border-top: 0.5pt solid #999;
