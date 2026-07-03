@@ -209,7 +209,7 @@ jobs:
 
           chmod +x "$SCRIPT_PATH"
 
-          mkdir -p rawpedia_book
+          mkdir -p rawtherapee-manual
 
           if ! "./$SCRIPT_PATH" 2>&1 | tee rawtherapee_manual/build-script.log; then
             echo "❌ Manual build failed."
@@ -220,8 +220,8 @@ jobs:
             echo "---- workspace root ----"
             ls -la || true
             echo
-            echo "---- rawpedia_book directory ----"
-            ls -la rawpedia_book || true
+            echo "---- rawtherapee-manual directory ----"
+            ls -la rawtherapee-manual || true
             exit 1
           fi
 
