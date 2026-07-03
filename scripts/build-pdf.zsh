@@ -3763,7 +3763,45 @@ for page in all_pages_raw:
     content = extract_main_or_body(text)
     content = strip_bad_parts(content)
     content = clean_links(content)
+    
+    def strip_duplicate_article_heading(content: str, title: str) -> str:
+        title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
 
+        def clean_text(s: str) -> str:
+            s = re.sub(r"<[^>]+>", " ", s)
+            s = html.unescape(s)
+            return re.sub(r"\s+", " ", s).strip().lower()
+
+        # Remove leading empty anchors/wrappers before the real duplicate heading.
+        content = re.sub(
+            r"""^\s*(?:<a\b[^>]*(?:id|name)=["'][^"']+["'][^>]*>\s*</a>\s*)+""",
+            "",
+            content,
+            flags=re.I | re.S,
+        )
+
+        # Remove first visible heading if it matches the article title.
+        m = re.match(
+            r"""^\s*<h[1-6]\b[^>]*>.*?</h[1-6]>\s*""",
+            content,
+            flags=re.I | re.S,
+        )
+
+        if m and clean_text(m.group(0)) == title_plain:
+            return content[m.end():].lstrip()
+
+        # Also catch title duplicated as a first paragraph/div.
+        m = re.match(
+            r"""^\s*<(p|div)\b[^>]*>.*?</\1>\s*""",
+            content,
+            flags=re.I | re.S,
+        )
+
+        if m and clean_text(m.group(0)) == title_plain:
+            return content[m.end():].lstrip()
+
+        return content
+        
     if is_redirect_page_text(content, title):
         suppressed_redirects.append(rel)
         continue
@@ -3771,7 +3809,7 @@ for page in all_pages_raw:
     content = rewrite_images(content, page, title, rel)
     content = prefix_ids_and_anchors(content, page_id)
     content = strip_empty_leading_blocks(content)
-
+    content = strip_duplicate_article_heading(content, title)
     article_toc = build_article_toc(content, page_id)
     has_article_toc = bool(article_toc)
 
@@ -5512,44 +5550,6 @@ hr {{
         lines.append('</div>')
 
         return "\n".join(lines)
-
-    def strip_duplicate_article_heading(content: str, title: str) -> str:
-        title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
-
-        def clean_text(s: str) -> str:
-            s = re.sub(r"<[^>]+>", " ", s)
-            s = html.unescape(s)
-            return re.sub(r"\s+", " ", s).strip().lower()
-
-        # Remove leading empty anchors/wrappers before the real duplicate heading.
-        content = re.sub(
-            r"""^\s*(?:<a\b[^>]*(?:id|name)=["'][^"']+["'][^>]*>\s*</a>\s*)+""",
-            "",
-            content,
-            flags=re.I | re.S,
-        )
-
-        # Remove first visible heading if it matches the article title.
-        m = re.match(
-            r"""^\s*<h[1-6]\b[^>]*>.*?</h[1-6]>\s*""",
-            content,
-            flags=re.I | re.S,
-        )
-
-        if m and clean_text(m.group(0)) == title_plain:
-            return content[m.end():].lstrip()
-
-        # Also catch title duplicated as a first paragraph/div.
-        m = re.match(
-            r"""^\s*<(p|div)\b[^>]*>.*?</\1>\s*""",
-            content,
-            flags=re.I | re.S,
-        )
-
-        if m and clean_text(m.group(0)) == title_plain:
-            return content[m.end():].lstrip()
-
-        return content
         
     current_section = None
     part_num = 0
@@ -5609,7 +5609,7 @@ hr {{
 <div class="section-label">{html.escape(section)}</div>
 <h1 class="article-title">{html.escape(info["title"])}</h1>
 <div class="article-body">
-{strip_duplicate_article_heading(info["content"], info["title"])}
+{info["content"]}
 
 <div class="article-github-qr">
   <div class="article-github-qr-title">Source article on GitHub</div>
@@ -7863,7 +7863,6 @@ if file_uris:
     for item in file_uris[:120]:
         print(f"   {item}")
     sys.exit(1)
-fi
 
 print("Final PDF contains no file:// hyperlink annotations")
 CHECK_FINAL_PDF_FILE_LINKS
