@@ -3840,8 +3840,6 @@ language_dir_re = re.compile(
     flags=re.I,
 )
 
-print("✅ QR GitHub source URLs are English-only")
-
 bad_qr_redirect_sources = []
 
 for info in infos:
@@ -3882,6 +3880,7 @@ if bad_qr_sources:
     sys.exit(1)
 
 print("✅ QR GitHub source URLs are English-only")
+
 print("✅ Final QR resolver selected non-redirect source files")
 print("✅ QR GitHub source URLs do not point to redirect source files")
 
@@ -4442,35 +4441,53 @@ body {{
   justify-content: center;
   text-align: center;
   break-after: page;
-  background: #000000;
-  color: #fff;
+  background: #ffffff;
+  color: #000000;
   margin: 0;
   padding: 0.95in;
+  position: relative;
+  overflow: hidden;
+  }}
+
+.cover-button-border {{
+  position: absolute;
+  left: 0.18in;
+  top: 0.18in;
+  right: 0.18in;
+  bottom: 0.18in;
+  pointer-events: none;
+  z-index: 0;
+}}
+
+.cover-button-border img {{
+  width: 0.28in;
+  height: 0.28in;
+  object-fit: contain;
+  margin: 0.035in;
+  background: #ffffff;
+  border: 0.4pt solid #d8e7ff;
+  padding: 0.025in;
+}}
+
+.cover > *:not(.cover-button-border) {{
+  position: relative;
+  z-index: 1;
+}}
+
+.cover-icon {{
+  width: 2.35in;
+  height: 2.35in;
 }}
 
 .cover-icon-frame {{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #101521;
+  background: #eeeeee;
   border-radius: 0.45in;
   padding: 0.26in;
   margin: 0 auto 0.45in auto;
-  border-top: 5pt solid #8db8ff;
-  border-left: 5pt solid #5f8fe8;
-  border-right: 5pt solid #1f3e7a;
-  border-bottom: 5pt solid #14213d;
-}}
-
-.cover-icon-frame a {{
-  display: block;
-}}
-
-.cover-icon {{
-  width: 3.25in;
-  height: 3.25in;
-  object-fit: contain;
-  display: block;
+  border: 2pt solid #d8e7ff;
 }}
 
 .cover-title-stack {{
@@ -4496,25 +4513,25 @@ body {{
 }}
 
 .cover-title-back-3 {{
-  color: #14213d;
+  color: #b9d7ff;
   left: 2.4pt;
   top: 2.4pt;
 }}
 
 .cover-title-back-2 {{
-  color: #334a78;
+  color: #72aaff;
   left: 1.6pt;
   top: 1.6pt;
 }}
 
 .cover-title-back-1 {{
-  color: #7fa8e8;
+  color: #1f6fff;
   left: 0.8pt;
   top: 0.8pt;
 }}
 
 .cover-title-front {{
-  color: #f8fbff;
+  color: #000000;
   left: 0;
   top: 0;
 }}
@@ -4539,48 +4556,59 @@ body {{
 }}
 
 .cover-date-back {{
-  color: #26334b;
+  color: #8fc2ff;
   left: 0.7pt;
   top: 0.7pt;
 }}
 
 .cover-date {{
-  color: #dce8ff;
+  color: #000000;
 }}
 
 .subtitle-stack {{
   position: relative;
-  width: 100%;
-  height: 0.26in;
-  margin-top: 0.06in;
+  width: 5.4in;
+  height: 0.36in;
+  margin: 0.12in auto 0 auto;
+  background: #000000;
+  border: 1pt solid #333333;
+  padding: 0;
 }}
 
 .subtitle-layer,
 .cover .subtitle {{
   position: absolute;
   left: 0;
-  top: 0;
+  top: 0.085in;
   width: 100%;
   font-family: Helvetica, Arial, sans-serif;
-  font-size: 15pt;
+  font-size: 13pt;
+  font-weight: bold;
   text-align: center;
 }}
 
 .subtitle-back {{
-  color: #26334b;
-  left: 0.55pt;
-  top: 0.55pt;
+  color: #555555;
+  left: 1pt;
+  top: calc(0.085in + 1pt);
 }}
 
 .cover .subtitle {{
-  color: #dce8ff;
+  color: #ffffff;
 }}
 
 .cover .edition {{
+  width: 5.4in;
+  background: #000000;
+  border: 1pt solid #333333;
+  box-sizing: border-box;
   font-family: Helvetica, Arial, sans-serif;
   font-size: 9.5pt;
-  color: #aac2e8;
-  margin-top: 0.35in;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+  margin: 0.08in auto 0 auto;
+  padding: 0.07in 0.12in;
 }}
 
 .half-title-git-version {{
@@ -5053,7 +5081,6 @@ pre {{
   padding: 0.32em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  word-break: break-word;
   max-width: 100%;
   box-sizing: border-box;
   font-size: 6.4pt;
@@ -5068,7 +5095,6 @@ code {{
 
   white-space: normal;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }}
 
 a {{
@@ -5190,8 +5216,46 @@ hr {{
 <body>
 """)
 
-    out.write(f"""
+# Build random RawTherapee button/icon border for cover.
+import os
+import random
+from pathlib import Path
+
+rt_git_path = Path(
+    Path.home() / "repo-rt" 
+    or os.environ.get("RT_GIT")
+    or os.environ.get("RT_GIT_DIR")
+).expanduser().resolve()
+
+button_root = rt_git_path / "rtdata" / "images"
+
+if button_root.exists():
+    button_candidates = sorted(
+        p for p in button_root.rglob("*")
+        if p.suffix.lower() in {".svg", ".png"}
+        and p.name.lower() not in {
+            "rawtherapee.svg",
+            "rawtherapee.png",
+            "rawtherapee.ico",
+        }
+    )
+else:
+    button_candidates = []
+
+random.seed(RT_GIT_VERSION + RAWPEDIA_GIT_VERSION)
+
+cover_buttons = random.sample(button_candidates, min(28, len(button_candidates)))
+
+cover_button_html = "\n".join(
+    f'<img src="{html.escape(p.resolve().as_uri(), quote=True)}" alt="">'
+    for p in cover_buttons
+)
+
+out.write(f"""
 <section class="cover">
+<div class="cover-button-border">
+{cover_button_html}
+</div>
 <div class="cover-icon-frame">
   <a href="#contents">
     <img class="cover-icon" src="{html.escape(RT_COVER_URI, quote=True)}" alt="RawTherapee icon">
@@ -5227,7 +5291,7 @@ hr {{
 </div>
 """)
 
-    out.write(f"""
+out.write(f"""
 <section class="half-title">
 <h1>RawTherapee Manual</h1>
 <p>A local manual generated from RAWPedia.</p>
@@ -5243,7 +5307,7 @@ hr {{
 </section>
 """)
 
-    out.write(f"""
+out.write(f"""
 <section class="copyright-page">
 <div class="copyright-inner">
 <p><strong>RawTherapee Manual</strong></p>
@@ -5259,14 +5323,14 @@ hr {{
 </section>
 """)
 
-    out.write(f"""
+out.write(f"""
 <section class="license-page">
 <h1>License</h1>
 <div class="license-text">{license_html}</div>
 </section>
 """)
 
-    out.write(f"""
+out.write(f"""
 <section class="preface">
 <h2>Reference Versions at Buildtime</h1>
 <div class="git-version-box preface-git-version">
@@ -5289,71 +5353,71 @@ hr {{
 </section>
 """)
 
-    out.write("""
+out.write("""
 <section class="toc-section-wrapper" id="contents">
 <h1>Contents</h1>
 <div class="toc">
 """)
 
-    current_section = None
+current_section = None
 
-    for info in infos:
-        section = info["section"]
-        section_id = info["section_id"]
+for info in infos:
+    section = info["section"]
+    section_id = info["section_id"]
 
-        if section != current_section:
-            if current_section is not None:
-                out.write("</div>\n")
-            out.write('<div class="toc-part">\n')
-            out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
-            current_section = section
+    if section != current_section:
+        if current_section is not None:
+            out.write("</div>\n")
+        out.write('<div class="toc-part">\n')
+        out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
+        current_section = section
 
-        out.write(
-            f'<a href="#page-{html.escape(info["id"])}">'
-            f'{html.escape(info["title"])}</a>\n'
-        )
+    out.write(
+        f'<a href="#page-{html.escape(info["id"])}">'
+        f'{html.escape(info["title"])}</a>\n'
+    )
 
-    if current_section is not None:
-        out.write("</div>\n")
+if current_section is not None:
+    out.write("</div>\n")
 
-    out.write("""
+out.write("""
 <div class="toc-part">
 <h2>Back Matter</h2>
 <a href="#technical-index">Index of Technical Terms</a>
 </div>
 """)
 
-    out.write("""
+out.write("""
 </div>
 </section>
 """)
 
-    section_infos = defaultdict(list)
+section_infos = defaultdict(list)
 
-    for section_info in infos:
-        section_infos[section_info["section"]].append(section_info)
+for section_info in infos:
+    section_infos[section_info["section"]].append(section_info)
 
-    def build_part_subtoc(section: str) -> str:
-        refs = section_infos.get(section, [])
+def build_part_subtoc(section: str) -> str:
+    refs = section_infos.get(section, [])
 
-        if not refs:
-            return ""
+    if not refs:
+        return ""
 
-        lines = []
-        lines.append('<div class="part-subtoc">')
-        lines.append('<div class="part-subtoc-title">In this section</div>')
-        lines.append('<div class="part-subtoc-body">')
+    lines = []
+    lines.append('<div class="part-subtoc">')
+    lines.append('<div class="part-subtoc-title">In this section</div>')
+    lines.append('<div class="part-subtoc-body">')
 
-        for ref in refs:
-            lines.append(
-                f'<a href="#page-{html.escape(ref["id"])}">'
-                f'{html.escape(ref["title"])}</a>'
-            )
+    for ref in refs:
+        lines.append(
+            f'<a href="#page-{html.escape(ref["id"])}">'
+            f'{html.escape(ref["title"])}</a>'
+        )
 
-        lines.append('</div>')
-        lines.append('</div>')
+    lines.append('</div>')
+    lines.append('</div>')
 
-        return "\n".join(lines)
+    return "\n".join(lines)
 
     current_section = None
     part_num = 0
