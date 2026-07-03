@@ -211,7 +211,7 @@ jobs:
 
           mkdir -p rawtherapee-manual
 
-          if ! "./$SCRIPT_PATH" 2>&1 | tee rawtherapee_manual/build-script.log; then
+          if ! "./$SCRIPT_PATH" 2>&1 | tee rawtherapee-manual/build-script.log; then
             echo "❌ Manual build failed."
             echo
             echo "---- build-script.log tail ----"
@@ -229,17 +229,17 @@ jobs:
         run: |
           set -euo pipefail
       
-          BOOK_DIR="rawtherapee_manual"
+          BOOK_DIR="rawtherapee-manual"
       
           test -f "$BOOK_DIR/book.html"
-          test -s rawtherapee_manual.pdf
+          test -s rawtherapee-manual.pdf
       
           echo "---- Generated output files ----"
-          ls -lh rawtherapee_manual.pdf
+          ls -lh rawtherapee-manual.pdf
           ls -la "$BOOK_DIR" | head -160
       
           echo "---- PDF page count ----"
-          PAGE_COUNT="$(qpdf --show-npages rawtherapee_manual.pdf)"
+          PAGE_COUNT="$(qpdf --show-npages rawtherapee-manual.pdf)"
           echo "PAGE_COUNT=$PAGE_COUNT"
       
           if (( PAGE_COUNT < 20 )); then
