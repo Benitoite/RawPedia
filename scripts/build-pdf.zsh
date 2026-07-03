@@ -4104,7 +4104,7 @@ h1, h2, h3, h4, h5, h6,
 
 @page {{
   size: 8.125in 10.25in;
-  margin-top: 0.72in;
+  margin-top: 0.9in;
   margin-right: 0.9in;
   margin-bottom: 0.72in;
   margin-left: 0.5in;
@@ -4119,7 +4119,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page articlepage:left {{
-  margin-top: 0.72in;
+  margin-top: 0.9in;
   margin-right: 0.4in;
   margin-bottom: 0.72in;
   margin-left: 0.8in;
@@ -4137,7 +4137,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page articlepage:right {{
-  margin-top: 0.72in;
+  margin-top: 0.9in;
   margin-right: 0.8in;
   margin-bottom: 0.72in;
   margin-left: 0.4in;
@@ -4270,7 +4270,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page frontmatter:left {{
-  margin-top: 0.72in;
+  margin-top: 0.9in;
   margin-right: 0.5in;
   margin-bottom: 0.72in;
   margin-left: 0.9in;
@@ -4284,7 +4284,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page frontmatter:right {{
-  margin-top: 0.72in;
+  margin-top: 0.9in;
   margin-right: 0.9in;
   margin-bottom: 0.72in;
   margin-left: 0.5in;
@@ -4321,7 +4321,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page tocpage:left {{
-  margin-top: 0.62in;
+  margin-top: 0.9in;
   margin-right: 0.5in;
   margin-bottom: 0.68in;
   margin-left: 0.9in;
@@ -4335,7 +4335,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page tocpage:right {{
-  margin-top: 0.62in;
+  margin-top: 0.9in;
   margin-right: 0.9in;
   margin-bottom: 0.68in;
   margin-left: 0.5in;
@@ -4379,7 +4379,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page indexpage:left {{
-  margin-top: 0.62in;
+  margin-top: 0.9in;
   margin-right: 0.5in;
   margin-bottom: 0.68in;
   margin-left: 0.9in;
@@ -4393,7 +4393,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page indexpage:right {{
-  margin-top: 0.62in;
+  margin-top: 0.9in;
   margin-right: 0.9in;
   margin-bottom: 0.68in;
   margin-left: 0.5in;
@@ -5368,7 +5368,7 @@ hr {{
   columns: 4;
   column-count: 4;
   column-width: 1.15in;
-  column-gap: 0.08in;
+  column-gap: 0.12in;
   column-rule: 0.25pt solid #ccc;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 5.4pt;
