@@ -228,61 +228,64 @@ jobs:
       - name: Verify PDF content was generated
         run: |
           set -euo pipefail
-
-          test -f rawpedia_book/book.html
+      
+          BOOK_DIR="rawtherapee_manual"
+      
+          test -f "$BOOK_DIR/book.html"
           test -s rawtherapee_manual.pdf
-
+      
           echo "---- Generated output files ----"
           ls -lh rawtherapee_manual.pdf
-          ls -la rawpedia_book | head -160
-
+          ls -la "$BOOK_DIR" | head -160
+      
           echo "---- PDF page count ----"
           PAGE_COUNT="$(qpdf --show-npages rawtherapee_manual.pdf)"
           echo "PAGE_COUNT=$PAGE_COUNT"
-
+      
           if (( PAGE_COUNT < 20 )); then
             echo "❌ PDF page count is suspiciously low."
             exit 1
           fi
-
+      
           if (( PAGE_COUNT % 4 != 0 )); then
             echo "❌ PDF page count is not divisible by 4."
             exit 1
           fi
-
+      
           echo "---- Selected article count from generated HTML ----"
           ARTICLE_COUNT="$(
-            python3 - <<'PY'
+            python3 - "$BOOK_DIR/book.html" <<'PY'
           from pathlib import Path
           from html.parser import HTMLParser
-
+          import sys
+      
           class ArticleCounter(HTMLParser):
               def __init__(self):
                   super().__init__()
                   self.count = 0
-
+      
               def handle_starttag(self, tag, attrs):
                   if tag.lower() != "section":
                       return
-
+      
                   attrs = dict(attrs)
                   section_id = attrs.get("id", "")
                   classes = attrs.get("class", "").split()
-
+      
                   if section_id.startswith("page-") and "article" in classes:
                       self.count += 1
-
-          s = Path("rawpedia_book/book.html").read_text(encoding="utf-8", errors="replace")
-
+      
+          s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+      
           parser = ArticleCounter()
           parser.feed(s)
-
+      
           print(parser.count)
           PY
           )"
-
+      
           echo "ARTICLE_COUNT=$ARTICLE_COUNT"
-
+      
           if [[ "$ARTICLE_COUNT" -lt 1 ]]; then
             echo "❌ Manual HTML contains no article sections."
             exit 1
