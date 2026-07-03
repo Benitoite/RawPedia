@@ -5216,11 +5216,6 @@ hr {{
 <body>
 """)
 
-with OUTPUT_HTML.open("w", encoding="utf-8") as out:
-    out.write("""<!doctype html>
-...
-""")
-
     # Build random RawTherapee button/icon border for cover.
     import os
     import random
@@ -5296,7 +5291,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 </div>
 """)
 
-out.write(f"""
+    out.write(f"""
 <section class="half-title">
 <h1>RawTherapee Manual</h1>
 <p>A local manual generated from RAWPedia.</p>
@@ -5312,7 +5307,7 @@ out.write(f"""
 </section>
 """)
 
-out.write(f"""
+    out.write(f"""
 <section class="copyright-page">
 <div class="copyright-inner">
 <p><strong>RawTherapee Manual</strong></p>
@@ -5328,14 +5323,14 @@ out.write(f"""
 </section>
 """)
 
-out.write(f"""
+    out.write(f"""
 <section class="license-page">
 <h1>License</h1>
 <div class="license-text">{license_html}</div>
 </section>
 """)
 
-out.write(f"""
+    out.write(f"""
 <section class="preface">
 <h2>Reference Versions at Buildtime</h1>
 <div class="git-version-box preface-git-version">
@@ -5357,8 +5352,7 @@ out.write(f"""
 <p class="preface-blurb">This manual is formatted as a standard 8 × 10 inch trade paperback with bleed, using an 8.125&quot; × 10.25&quot; PDF page size.</p>
 </section>
 """)
-
-out.write("""
+    out.write("""
 <section class="toc-section-wrapper" id="contents">
 <h1>Contents</h1>
 <div class="toc">
@@ -5384,14 +5378,12 @@ for info in infos:
 
 if current_section is not None:
     out.write("</div>\n")
-
-out.write("""
+    out.write("""
 <div class="toc-part">
 <h2>Back Matter</h2>
 <a href="#technical-index">Index of Technical Terms</a>
 </div>
 """)
-
 out.write("""
 </div>
 </section>
@@ -5424,20 +5416,21 @@ def build_part_subtoc(section: str) -> str:
 
     return "\n".join(lines)
 
-    current_section = None
-    part_num = 0
-    article_num = 0
-    for info in infos:
-        section = info["section"]
-        section_id = info["section_id"]
+current_section = None
+part_num = 0
+article_num = 0
 
-        if section != current_section:
-            current_section = section
-            part_num += 1
+for info in infos:
+    section = info["section"]
+    section_id = info["section_id"]
 
-            part_subtoc = build_part_subtoc(section)
+    if section != current_section:
+        current_section = section
+        part_num += 1
 
-            out.write(f"""
+        part_subtoc = build_part_subtoc(section)
+
+        out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5453,29 +5446,29 @@ def build_part_subtoc(section: str) -> str:
 </div>
 </section>
 """)
-        else:
+    else:
             out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
 """)
 
-        print(f"  ➜ [{section}] {info['title']}")
+            print(f"  ➜ [{section}] {info['title']}")
 
-        article_num += 1
+            article_num += 1
 
-        article_classes = ["article"]
+            article_classes = ["article"]
 
-        if article_num == 1:
-            article_classes.append("first-article")
-        elif article_is_major(info["content"], info["title"]):
-            article_classes.append("major-article")
-        else:
-            article_classes.append("short-article")
+            if article_num == 1:
+                article_classes.append("first-article")
+            elif article_is_major(info["content"], info["title"]):
+                article_classes.append("major-article")
+            else:
+                article_classes.append("short-article")
 
-        article_class = " ".join(article_classes)
+            article_class = " ".join(article_classes)
 
-        out.write(f"""
+    out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
