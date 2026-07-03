@@ -3,7 +3,7 @@ set -euo pipefail
 
 SOURCE_DIR="$HOME/RawPedia/Public"
 CONTENTS_DIR="$HOME/RawPedia/content"
-WORK_DIR="rawpedia_book"
+WORK_DIR="rawtherapee_manual"
 OUTPUT_HTML="$WORK_DIR/book.html"
 OUTPUT_PDF="rawtherapee_manual.pdf"
 RT_COVER_ICNS="$HOME/repo-rt/tools/osx/rawtherapee.icns"
@@ -41,7 +41,7 @@ done
 mkdir -p "$WORK_DIR"
 
 if [[ "${RAWPEDIA_KEEP_BOOK_CACHE:-0}" != "1" ]]; then
-  echo "🧹 Cleaning old generated book reports and folders..."
+  echo "Cleaning old generated book reports and folders..."
 
   rm -f "$WORK_DIR/book.html"
   rm -f "$WORK_DIR"/*.txt(N)
@@ -54,10 +54,10 @@ if [[ "${RAWPEDIA_KEEP_BOOK_CACHE:-0}" != "1" ]]; then
   rm -rf "$WORK_DIR/article-qrs"
   rm -rf "$WORK_DIR/online-image-fallbacks"
 else
-  echo "🧹 Keeping old generated book cache because RAWPEDIA_KEEP_BOOK_CACHE=1"
+  echo "Keeping old generated book cache because RAWPEDIA_KEEP_BOOK_CACHE=1"
 fi
 
-echo "📖 Building RawTherapee Manual..."
+echo "Building RawTherapee Manual..."
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
   echo "❌ SOURCE_DIR does not exist: $SOURCE_DIR"
@@ -112,7 +112,7 @@ RAWPEDIA_GIT_VERSION="$(git_version_string "$RAWPEDIA_GIT_DIR" "RawPedia")"
 echo "$RT_GIT_VERSION"
 echo "$RAWPEDIA_GIT_VERSION"
 
-echo "🎨 Converting cover .icns icon..."
+echo "Converting cover .icns icon..."
 
 rm -f "$RT_COVER_PNG"
 
@@ -123,7 +123,7 @@ if [[ ! -s "$RT_COVER_PNG" ]]; then
   exit 1
 fi
 
-echo "🎨 Converting header .ico icon..."
+echo "Converting header .ico icon..."
 
 rm -f "$RT_HEADER_PNG"
 rm -f "$WORK_DIR"/rawtherapee-header-icon-*.png(N)
@@ -171,7 +171,7 @@ if [[ ! -s "$RT_HEADER_PNG" ]]; then
   exit 1
 fi
 
-echo "🔳 Generating RawPedia QR code..."
+echo "Generating RawPedia QR code..."
 
 if command -v qrencode >/dev/null 2>&1; then
   qrencode \
@@ -204,7 +204,7 @@ find "$SOURCE_DIR" -type f -name "*.html" \
 TOTAL_ALL=$(wc -l < "$WORK_DIR/pages-all.txt" | tr -d ' ')
 echo "Found $TOTAL_ALL total HTML pages"
 
-echo "📚 Building book-style English manual..."
+echo "Building book-style English manual..."
 
 python3 - "$SOURCE_DIR" "$CONTENTS_DIR" "$WORK_DIR/pages-all.txt" "$OUTPUT_HTML" "$RT_COVER_PNG" "$RT_HEADER_PNG" "$RT_AUTHORS_TXT" "$RT_LICENSE_TXT" "$RT_GIT_VERSION" "$RAWPEDIA_GIT_VERSION" "$RAWPEDIA_QR_SVG" "$RAWPEDIA_ONLINE_URL" <<'PY'
 import os
@@ -3802,7 +3802,7 @@ for info in infos:
     )
 
     if info["github_url"] != expected_url:
-        print(f"🔧 QR URL repaired: {info['github_url']} -> {expected_url}")
+        print(f"QR URL repaired: {info['github_url']} -> {expected_url}")
         info["github_url"] = expected_url
         info["github_qr_uri"] = make_article_qr(info["id"], expected_url)
 
@@ -4445,34 +4445,7 @@ body {{
   color: #000000;
   margin: 0;
   padding: 0.95in;
-  position: relative;
-  overflow: hidden;
   }}
-
-.cover-button-border {{
-  position: absolute;
-  left: 0.18in;
-  top: 0.18in;
-  right: 0.18in;
-  bottom: 0.18in;
-  pointer-events: none;
-  z-index: 0;
-}}
-
-.cover-button-border img {{
-  width: 0.28in;
-  height: 0.28in;
-  object-fit: contain;
-  margin: 0.035in;
-  background: #ffffff;
-  border: 0.4pt solid #d8e7ff;
-  padding: 0.025in;
-}}
-
-.cover > *:not(.cover-button-border) {{
-  position: relative;
-  z-index: 1;
-}}
 
 .cover-icon {{
   width: 2.35in;
@@ -4609,6 +4582,15 @@ body {{
   text-align: center;
   margin: 0.08in auto 0 auto;
   padding: 0.07in 0.12in;
+}}
+
+.cover-version {{
+  font-family: Menlo, Consolas, "Courier New", monospace;
+  font-size: 13pt;
+  font-weight: bold;
+  color: #000000;
+  margin: 0 0 0.08in 0;
+  text-align: center;
 }}
 
 .half-title-git-version {{
@@ -5216,46 +5198,10 @@ hr {{
 <body>
 """)
 
-    # Build random RawTherapee button/icon border for cover.
-    import os
-    import random
-    from pathlib import Path
 
-    rt_git_path = Path(
-        Path.home() / "repo-rt"
-        or os.environ.get("RT_GIT")
-        or os.environ.get("RT_GIT_DIR")
-    ).expanduser().resolve()
-
-    button_root = rt_git_path / "rtdata" / "images"
-
-    if button_root.exists():
-        button_candidates = sorted(
-            p for p in button_root.rglob("*")
-            if p.suffix.lower() in {".svg", ".png"}
-            and p.name.lower() not in {
-                "rawtherapee.svg",
-                "rawtherapee.png",
-                "rawtherapee.ico",
-            }
-        )
-    else:
-        button_candidates = []
-
-    random.seed(RT_GIT_VERSION + RAWPEDIA_GIT_VERSION)
-
-    cover_buttons = random.sample(button_candidates, min(28, len(button_candidates)))
-
-    cover_button_html = "\n".join(
-        f'<img src="{html.escape(p.resolve().as_uri(), quote=True)}" alt="">'
-        for p in cover_buttons
-    )
 
     out.write(f"""
 <section class="cover">
-<div class="cover-button-border">
-{cover_button_html}
-</div>
 <div class="cover-icon-frame">
   <a href="#contents">
     <img class="cover-icon" src="{html.escape(RT_COVER_URI, quote=True)}" alt="RawTherapee icon">
@@ -5267,7 +5213,7 @@ hr {{
   <div class="cover-title-layer cover-title-back-1">RawTherapee Manual</div>
   <h1 class="cover-title-front">RawTherapee Manual</h1>
 </div>
-
+<div class="cover-version">{html.escape(RT_GIT_VERSION)}</div>
 <div class="cover-date-stack" aria-label="{html.escape(BUILD_DATE)}">
   <div class="cover-date-layer cover-date-back">{html.escape(BUILD_DATE)}</div>
   <div class="cover-date">{html.escape(BUILD_DATE)}</div>
@@ -5608,7 +5554,7 @@ PY
 
 echo "HTML book complete: $OUTPUT_HTML"
 echo
-echo "🔳 Checking generated article QR image paths..."
+echo "Checking generated article QR image paths..."
 
 python3 - "$OUTPUT_HTML" <<'CHECK_ARTICLE_QR_PATHS'
 import re
@@ -5772,7 +5718,7 @@ fi
 echo "---- technical index CSS check ----"
 grep -n "index-body" -A10 "$OUTPUT_HTML" || true
 
-echo "🖼 Dereferencing MediaWiki-style image links..."
+echo "Dereferencing MediaWiki-style image links..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" <<'DEREFERENCE_MEDIAWIKI_IMAGES'
 import os
@@ -5916,7 +5862,7 @@ print(f"img tags after:  {after_imgs}")
 print("MediaWiki-style image dereference complete")
 DEREFERENCE_MEDIAWIKI_IMAGES
 
-echo "🖼 Final image URL cleanup before PDF render..."
+echo "Final image URL cleanup before PDF render..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'RAWPEDIA_IMAGE_URL_CLEANUP'
 import re
@@ -6121,7 +6067,7 @@ print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-rela
 
 print("Final image URL cleanup complete")
 RAWPEDIA_IMAGE_URL_CLEANUP
-echo "🔧 Preparing final image cleanup before PDF render..."
+echo "Preparing final image cleanup before PDF render..."
 
 if ! command -v weasyprint >/dev/null 2>&1; then
   echo "❌ weasyprint not found."
@@ -6130,7 +6076,7 @@ if ! command -v weasyprint >/dev/null 2>&1; then
   exit 1
 fi
 echo
-echo "🖼 Image resolver..."
+echo "Image resolver..."
 
 python3 - "$OUTPUT_HTML" "$SOURCE_DIR" "$RAWPEDIA_ONLINE_URL" <<'IMAGE_RESOLVER'
 import os
@@ -6421,7 +6367,7 @@ print("Image resolver complete")
 IMAGE_RESOLVER
 
 echo
-echo "🔳 Re-checking generated article QR image paths after cleanup..."
+echo "Re-checking generated article QR image paths after cleanup..."
 
 python3 - "$OUTPUT_HTML" <<'CHECK_ARTICLE_QR_PATHS_AFTER_CLEANUP'
 import re
