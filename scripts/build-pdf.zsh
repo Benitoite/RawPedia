@@ -4118,27 +4118,18 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
   @top-left {{ content: element(bookHeader); width: 2.1in; }}
   @top-center {{ content: element(sectionLink); }}
-  @top-right {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
+  @top-right {{ content: ""; }}
 
   @bottom-left {{ content: ""; }}
   @bottom-center {{ content: ""; }}
   @bottom-right {{ content: ""; }}
 }}
 
-@page :left {{
+@page articlepage:left {{
   margin-top: 0.72in;
   margin-right: 0.4in;
   margin-bottom: 0.72in;
   margin-left: 0.8in;
-
-  @top-right {{
-    content: "";
-  }}
 
   @bottom-left {{
     content: counter(page);
@@ -4152,7 +4143,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   }}
 }}
 
-@page :right {{
+@page articlepage:right {{
   margin-top: 0.72in;
   margin-right: 0.8in;
   margin-bottom: 0.72in;
@@ -4441,7 +4432,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 9pt;
+  font-size: 9.1pt;
   line-height: 1.16;
   color: #000;
 }}
@@ -4552,10 +4543,10 @@ body {{
 
 .article-github-qr img {{
   display: block;
-  width: 1in;
-  height: 1in;
-  max-width: 1in;
-  max-height: 1in;
+  width: 1.5in;
+  height: 1.5in;
+  max-width: 1.5in;
+  max-height: 1.5in;
   margin: 0 auto;
   object-fit: contain;
 }}
@@ -4568,6 +4559,8 @@ body {{
 
 .article-github-qr-url {{
   overflow-wrap: anywhere;
+  font-family: Menlo, Consolas, "Courier New", monospace;
+  font-size: 7.5pt;
 }}
 
 .cover {{
@@ -5042,6 +5035,7 @@ body {{
 }}
 
 .article {{
+  page: articlepage;
   break-before: auto;
   margin-top: 1.35in;
   string-set: article attr(data-title);
@@ -5293,7 +5287,7 @@ pre code {{
 }}
 
 a {{
-  color: #1a237e;
+  color: #030842;
   text-decoration: none;
 }}
 
@@ -5652,10 +5646,10 @@ hr {{
         article_class = " ".join(article_classes)
 
         out.write(f"""
+<section id="page-{html.escape(info["id"])}" class="{article_class}" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
-<section id="page-{html.escape(info["id"])}" class="{article_class}" data-section="{html.escape(section)}" data-title="{html.escape(info["title"])}">
 <div class="section-label">{html.escape(section)}</div>
 <h1 class="article-title">{html.escape(info["title"])}</h1>
 <div class="article-body">
