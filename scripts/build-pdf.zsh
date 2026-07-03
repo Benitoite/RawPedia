@@ -4136,6 +4136,10 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
+  @top-right {{
+    content: "";
+  }}
+
   @bottom-left {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
@@ -4437,9 +4441,9 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 8.6pt;
-  line-height: 1.14;
-  color: #111;
+  font-size: 9.5pt;
+  line-height: 1.17;
+  color: #000;
 }}
 
 body {{
@@ -6600,21 +6604,41 @@ print(f"src file before: {before_src_file}")
 print(f"src file after:  {after_src_file}")
 print(f"src http before: {before_src_http}")
 print(f"src http after:  {after_src_http}")
+missing_report = OUTPUT_HTML.parent / "missing-images.txt"
+
+existing = ""
+if missing_report.exists():
+    existing = missing_report.read_text(encoding="utf-8", errors="replace").rstrip()
+
 if late_missing:
-    with missing_report.open("a", encoding="utf-8") as f:
-        f.write("\n")
-        f.write("Late Missing Image References\n")
-        f.write("=============================\n\n")
+    lines = []
+    if existing:
+        lines.append(existing)
+        lines.append("")
 
-        for item in late_missing:
-            f.write("------------------------------------------------------------\n")
-            f.write(f"Missing image: {item['filename']}\n")
-            f.write(f"Original src:   {item['raw']}\n")
-            f.write(f"Placeholder:    {item['placeholder']}\n\n")
+    lines.append("Late Missing Image References")
+    lines.append("=============================")
+    lines.append("")
 
-    print(f"⚠️ Late missing image references appended: {len(late_missing)}")
+    seen = set()
+    for item in late_missing:
+        key = (item["filename"], item["raw"], item["placeholder"])
+        if key in seen:
+            continue
+        seen.add(key)
+
+        lines.append("------------------------------------------------------------")
+        lines.append(f"Missing image: {item['filename']}")
+        lines.append(f"Original src:   {item['raw']}")
+        lines.append(f"Placeholder:    {item['placeholder']}")
+        lines.append("")
+
+    missing_report.write_text("\n".join(lines), encoding="utf-8")
+
+    print(f"⚠️ Late missing image references merged: {len(seen)}")
     print(f"⚠️ See: {missing_report}")
-print("Image resolver complete")
+
+print("Image resolver complete")print("Image resolver complete")
 IMAGE_RESOLVER
 
 echo
