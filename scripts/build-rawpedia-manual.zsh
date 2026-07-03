@@ -55,6 +55,16 @@ else
   RAWPEDIA_GIT_DIR="$HOME/RawPedia"
 fi
 
+echo "Getting frutiger.ttf font file from github"
+FRUTIGER_TTF="$WORK_DIR/frutiger.ttf"
+FRUTIGER_URL="https://raw.githubusercontent.com/yigitbey/dotfiles/master/.fonts/frutiger.ttf"
+
+if [[ ! -s "$FRUTIGER_TTF" ]]; then
+  curl -L "$FRUTIGER_URL" -o "$FRUTIGER_TTF"
+fi
+
+export FRUTIGER_TTF
+
 RT_LICENSE_TXT=""
 for candidate in \
   "$HOME/repo-rt/LICENSE" \
@@ -247,6 +257,8 @@ RAWPEDIA_GIT_VERSION = sys.argv[10] if len(sys.argv) > 10 else "RawPedia: git ve
 RAWPEDIA_QR_SVG = Path(sys.argv[11]).resolve() if len(sys.argv) > 11 else None
 RAWPEDIA_ONLINE_URL = sys.argv[12] if len(sys.argv) > 12 else "https://rawpedia.pixls.us"
 RAWPEDIA_QR_URI = RAWPEDIA_QR_SVG.as_uri() if RAWPEDIA_QR_SVG and RAWPEDIA_QR_SVG.exists() else ""
+
+FRUTIGER_URI = Path(os.environ["FRUTIGER_TTF"]).resolve().as_uri()
 
 RT_COVER_URI = RT_COVER_PNG.as_uri()
 RT_HEADER_URI = RT_HEADER_PNG.as_uri()
@@ -3988,6 +4000,32 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 <title>RawTherapee Manual</title>
 <style>
 
+@font-face {{
+  font-family: "FrutigerLocal";
+  src: url("{FRUTIGER_URI}") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}}
+
+.cover-title-front,
+.rainbow-title,
+.rainbow-letter,
+.rainbow-letter-glow,
+.rainbow-letter-front,
+.cover-version,
+.cover-date,
+.cover-date-layer,
+.subtitle-layer,
+.cover .subtitle,
+.half-title h1,
+.preface h1,
+.preface h2,
+.toc-section-wrapper h1,
+.part-page h1,
+.technical-index h1 {{
+  font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
+}}
+
 @page {{
   size: 8.125in 10.25in;
   margin-top: 0.72in;
@@ -4029,16 +4067,16 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 @page :left {{
   margin-top: 0.72in;
-  margin-right: 0.5in;
+  margin-right: 0.4in;
   margin-bottom: 0.72in;
-  margin-left: 0.9in;
+  margin-left: 0.8in;
 }}
 
 @page :right {{
   margin-top: 0.72in;
-  margin-right: 0.9in;
+  margin-right: 0.8in;
   margin-bottom: 0.72in;
-  margin-left: 0.5in;
+  margin-left: 0.4in;
 }}
 
 @page cover {{
@@ -4677,14 +4715,15 @@ body {{
   background: #000000;
   border: 1pt solid #333333;
   box-sizing: border-box;
-  font-family: Helvetica, Arial, sans-serif;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-style: italic;
   font-size: 9.5pt;
-  font-weight: bold;
+  font-weight: normal;
   color: #ffffff;
   text-align: center;
   margin: 0.08in auto 0 auto;
   padding: 0.07in 0.12in;
-  letter-spacing: 2pt;
+  letter-spacing: 1pt;
 }}
 
 .half-title-git-version {{
