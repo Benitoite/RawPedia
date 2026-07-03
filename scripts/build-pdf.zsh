@@ -3151,7 +3151,16 @@ def build_manual_link_map(infos):
         # Explicit aliases harvested from Hugo front matter.
         for alias in info.get("aliases", []):
             keys.add(slug_route_key(alias))
+            
+        keys_with_underscores = set()
 
+        for key in list(keys):
+            if key:
+                keys_with_underscores.add(key.replace("-", "_"))
+                keys_with_underscores.add(key.replace("_", "-"))
+
+        keys |= keys_with_underscores
+        
         for key in keys:
             key = slug_route_key(key)
             if key:
@@ -4124,8 +4133,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
-  @top-right {{ content: ""; }}
   @top-left {{ content: element(bookHeader); width: 2.1in; }}
+  @top-right {{ content: ""; }}
 
   @bottom-left {{ content: element(articleFooter); }}
   @bottom-right {{
@@ -4142,8 +4151,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.4in;
 
-  @top-left {{ content: element(bookHeader); width: 2.1in; }}
-  @top-right {{ content: ""; }}
+  @top-left {{ content: ""; }}
+  @top-right {{ content: element(bookHeader); width: 2.1in; }}
 
   @bottom-left {{
     content: counter(page);
@@ -4431,7 +4440,7 @@ body {{
 .running-book-header a {{
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.055in;
   color: #666;
   text-decoration: none;
@@ -4458,8 +4467,8 @@ body {{
 
 .book-header-date {{
   display: block;
-  font-size: 6.2pt;
-  color: #777;
+  font-size: 7.2pt;
+  color: #555;
 }}
 
 .running-article-footer {{
@@ -5312,7 +5321,13 @@ a {{
   text-decoration: none;
 }}
 
-.article-body a {{
+.article-body a[href^="http://"],
+.article-body a[href^="https://"] {{
+  color: #7a1f1f;
+  background: #fff1f1;
+}}
+
+.article-body a[href^="#"] {{
   color: #030842;
   background: #eefcff;
   padding: 0 0.8pt;
