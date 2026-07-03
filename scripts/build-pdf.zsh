@@ -930,6 +930,9 @@ def content_lookup_key(value: str) -> str:
     value = value.split("#", 1)[0]
     value = value.split("?", 1)[0]
     value = value.strip("/")
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+    value = value.replace("_", "-")
 
     value = re.sub(r"/index\.html$", "", value, flags=re.I)
     value = re.sub(r"\.html$", "", value, flags=re.I)
@@ -4133,8 +4136,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
-  @top-left {{ content: element(bookHeader); width: 2.1in; }}
-  @top-right {{ content: ""; }}
+  @top-right {{ content: element(bookHeader); }}
+  @top-left {{ content: ""; }}
 
   @bottom-left {{ content: element(articleFooter); }}
   @bottom-right {{
@@ -4151,8 +4154,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.4in;
 
-  @top-left {{ content: ""; }}
-  @top-right {{ content: element(bookHeader); width: 2.1in; text-align: right; }}
+  @top-right {{ content: ""; }}
+  @top-left {{ content: element(bookHeader); text-align: right; }}
 
   @bottom-left {{
     content: counter(page);
@@ -5347,14 +5350,13 @@ a {{
   border-radius: 0;
 }}
 
-.article-body .article-local-toc,
-.article-body .article-local-toc *,
-.article-body h1,
-.article-body h2,
-.article-body h3,
-.article-body h4,
-.article-body h5,
-.article-body h6,
+.article-body .article-local-toc a,
+.article-body h1 a,
+.article-body h2 a,
+.article-body h3 a,
+.article-body h4 a,
+.article-body h5 a,
+.article-body h6 a,
 .article-body h1 *,
 .article-body h2 *,
 .article-body h3 *,
@@ -5365,6 +5367,11 @@ a {{
   padding-left: 0 !important;
   padding-right: 0 !important;
   border-radius: 0 !important;
+}}
+
+.article-local-toc {{
+  padding: 0.08in 0.12in !important;
+  box-sizing: border-box;
 }}
 
 hr {{
@@ -7149,6 +7156,103 @@ if bad:
 
 print("Final href sanitizer passed")
 FINAL_HREF_SANITIZER
+
+echo "🔗 Rescuing RawPedia web links back to internal manual links..."
+
+python3 - "$OUTPUT_HTML" <<'RESCUE_RAWPEDIA_INTERNAL_LINKS'
+import re
+import sys
+import html
+import urllib.parse
+from pathlib import Path
+
+html_path = Path(sys.argv[1])
+s = html_path.read_text(encoding="utf-8", errors="replace")
+
+def keyify(value: str) -> str:
+    value = html.unescape(value or "")
+    value = urllib.parse.unquote(value)
+    value = value.replace("\\", "/")
+
+    parsed = urllib.parse.urlsplit(value)
+
+    # Absolute RawPedia URL -> path only.
+    if parsed.scheme in {"http", "https"}:
+        value = parsed.path
+    else:
+        value = value.split("#", 1)[0].split("?", 1)[0]
+
+    value = value.strip("/")
+    value = re.sub(r"/index\.html$", "", value, flags=re.I)
+    value = re.sub(r"\.html$", "", value, flags=re.I)
+
+    # Critical: make old RawPedia underscore URLs match Hugo/manual dash IDs.
+    value = value.replace("_", "-")
+
+    value = re.sub(r"[^a-z0-9/.-]+", "-", value.lower())
+    value = re.sub(r"-+", "-", value)
+    value = re.sub(r"/+", "/", value)
+
+    return value.strip("-/")
+
+manual = {}
+
+for m in re.finditer(
+    r'<section\b[^>]*\bid=["\'](page-[^"\']+)["\'][^>]*\bdata-title=["\']([^"\']+)["\']',
+    s,
+    flags=re.I | re.S,
+):
+    page_id = html.unescape(m.group(1))
+    title = html.unescape(m.group(2))
+    stem = page_id.removeprefix("page-")
+    target = "#" + page_id
+
+    for k in {
+        keyify(stem),
+        keyify(title),
+        keyify(title.replace("&", "and")),
+        keyify(stem.replace("-", "_")),
+        keyify(title.replace(" ", "_")),
+    }:
+        if k:
+            manual[k] = target
+
+rawpedia_hosts = {
+    "rawpedia.pixls.us",
+    "www.rawpedia.pixls.us",
+    "rawpedia.rawtherapee.com",
+    "www.rawpedia.rawtherapee.com",
+    "rawpedia.rawpixls.us",
+    "www.rawpedia.rawpixls.us",
+}
+
+changed = 0
+
+def repl(m):
+    global changed
+    quote = m.group(1)
+    href = html.unescape(m.group(2)).strip()
+    parsed = urllib.parse.urlsplit(href)
+
+    if parsed.scheme not in {"http", "https"}:
+        return m.group(0)
+
+    if parsed.netloc.lower() not in rawpedia_hosts:
+        return m.group(0)
+
+    k = keyify(parsed.path)
+
+    if k in manual:
+        changed += 1
+        return f'href={quote}{html.escape(manual[k], quote=True)}{quote}'
+
+    return m.group(0)
+
+s2 = re.sub(r'\bhref=(["\'])(.*?)\1', repl, s, flags=re.I | re.S)
+html_path.write_text(s2, encoding="utf-8")
+
+print(f"RawPedia web links rescued to internal links: {changed}")
+RESCUE_RAWPEDIA_INTERNAL_LINKS
 
 echo
 echo "---- href refs in generated book.html ----"
