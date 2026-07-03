@@ -247,8 +247,14 @@ jobs:
             exit 1
           fi
       
-          if (( PAGE_COUNT % 4 != 0 )); then
-            echo "❌ PDF page count is not divisible by 4."
+          FRONT_COVER_PAGE_COUNT=1
+          BACK_COVER_PAGE_COUNT=1
+          INSIDE_PAGE_COUNT=$(( PAGE_COUNT - FRONT_COVER_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
+
+          echo "INSIDE_PAGE_COUNT=$INSIDE_PAGE_COUNT"
+
+          if (( INSIDE_PAGE_COUNT % 4 != 0 )); then
+            echo "❌ Inside page count is not divisible by 4."
             exit 1
           fi
       
