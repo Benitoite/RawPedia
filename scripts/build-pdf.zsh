@@ -4124,14 +4124,14 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
-  @bottom-left {{
+  @bottom-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
     color: #555;
   }}
 
-  @bottom-right {{
+  @bottom-left {{
     content: element(articleFooter);
   }}
 }}
@@ -4142,11 +4142,11 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.4in;
 
-  @bottom-left {{
+  @bottom-right {{
     content: element(articleFooter);
   }}
 
-  @bottom-right {{
+  @bottom-left {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4250,23 +4250,23 @@ h1, h2, h3, h4, h5, h6,
   size: 8.125in 10.25in;
   margin: 0.805in;
 
-  @top-left {{ content: element(bookHeader); width: 2.1in; }}
+  @top-right {{ content: element(bookHeader); width: 2.1in; }}
   @top-center {{
     content: "RawTherapee Manual";
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
-  @top-right {{ content: ""; }}
+  @top-left {{ content: ""; }}
 
-  @bottom-left {{ content: ""; }}
+  @bottom-right {{ content: ""; }}
   @bottom-center {{
     content: string(article);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
-  @bottom-right {{ content: ""; }}
+  @bottom-left {{ content: ""; }}
 }}
 
 @page frontmatter:left {{
@@ -4275,7 +4275,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.9in;
 
-  @bottom-left {{
+  @bottom-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4289,7 +4289,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.5in;
 
-  @bottom-right {{
+  @bottom-left {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4326,7 +4326,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.68in;
   margin-left: 0.9in;
 
-  @bottom-left {{
+  @bottom-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4340,7 +4340,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.68in;
   margin-left: 0.5in;
 
-  @bottom-right {{
+  @bottom-left {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4384,7 +4384,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.68in;
   margin-left: 0.9in;
 
-  @bottom-left {{
+  @bottom-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -4398,7 +4398,7 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.68in;
   margin-left: 0.5in;
 
-  @bottom-right {{
+  @bottom-left {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
@@ -5264,6 +5264,38 @@ code {{
 
 pre code {{
   white-space: pre-wrap;
+  background: transparent;
+  padding: 0;
+}}
+
+.article-body pre,
+.article-body pre *,
+.article-body code,
+.article-body code *,
+.article-body tt,
+.article-body samp,
+.article-body kbd {{
+  text-align: left !important;
+  text-align-last: left !important;
+  hyphens: none !important;
+  word-spacing: normal !important;
+  letter-spacing: normal !important;
+}}
+
+.article-body pre {{
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}}
+
+.article-body code {{
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}}
+
+.article-body pre code {{
+  white-space: pre-wrap !important;
   background: transparent;
   padding: 0;
 }}
