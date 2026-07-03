@@ -232,14 +232,14 @@ jobs:
           BOOK_DIR="rawtherapee-manual"
       
           test -f "$BOOK_DIR/book.html"
-          test -s rawtherapee-manual.pdf
+          test -s rawtherapee_manual.pdf
       
           echo "---- Generated output files ----"
-          ls -lh rawtherapee-manual.pdf
+          ls -lh rawtherapee_manual.pdf
           ls -la "$BOOK_DIR" | head -160
       
           echo "---- PDF page count ----"
-          PAGE_COUNT="$(qpdf --show-npages rawtherapee-manual.pdf)"
+          PAGE_COUNT="$(qpdf --show-npages rawtherapee_manual.pdf)"
           echo "PAGE_COUNT=$PAGE_COUNT"
       
           if (( PAGE_COUNT < 20 )); then
