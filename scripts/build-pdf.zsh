@@ -32,7 +32,7 @@ if [[ "${RAWPEDIA_KEEP_BOOK_CACHE:-0}" != "1" ]]; then
   rm -f "$WORK_DIR"/*.pdf(N)
   rm -f "$WORK_DIR"/*.json(N)
   rm -f "$WORK_DIR"/*.log(N)
-
+  rm -f "$WORK_DIR"/*.otf(N)
   rm -rf "$WORK_DIR/article-qrs"
   rm -rf "$WORK_DIR/online-image-fallbacks"
 else
@@ -4255,44 +4255,25 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 @page frontmatter {{
   size: 8.125in 10.25in;
-  margin: 0.805in 0.805in 0.805in 0.805in;
+  margin: 0.805in;
 
-  @top-left {{
-    content: element(bookHeader);
-    width: 2.1in;
-  }}
-
+  @top-left {{ content: element(bookHeader); width: 2.1in; }}
   @top-center {{
     content: "RawTherapee Manual";
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
+  @top-right {{ content: ""; }}
 
-  @top-right {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
-
-  @bottom-left {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
-
+  @bottom-left {{ content: ""; }}
   @bottom-center {{
     content: string(article);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
-
-  @bottom-right {{
-    content: "";
-  }}
+  @bottom-right {{ content: ""; }}
 }}
 
 @page frontmatter:left {{
@@ -4300,37 +4281,6 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.5in;
   margin-bottom: 0.72in;
   margin-left: 0.9in;
-}}
-
-@page frontmatter:right {{
-  margin-top: 0.72in;
-  margin-right: 0.9in;
-  margin-bottom: 0.72in;
-  margin-left: 0.5in;
-}}
-
-@page tocpage {{
-  size: 8.125in 10.25in;
-  margin: 0.805in 0.805in 0.805in 0.805in;
-
-  @top-left {{
-    content: element(bookHeader);
-    width: 2.1in;
-  }}
-
-  @top-center {{
-    content: "Contents";
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 7.5pt;
-    color: #666;
-  }}
-
-  @top-right {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
 
   @bottom-left {{
     content: counter(page);
@@ -4338,17 +4288,43 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
     font-size: 8pt;
     color: #555;
   }}
+}}
 
+@page frontmatter:right {{
+  margin-top: 0.72in;
+  margin-right: 0.9in;
+  margin-bottom: 0.72in;
+  margin-left: 0.5in;
+
+  @bottom-right {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
+}}
+
+@page tocpage {{
+  size: 8.125in 10.25in;
+  margin: 0.805in;
+
+  @top-left {{ content: element(bookHeader); width: 2.1in; }}
+  @top-center {{
+    content: "Contents";
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 7.5pt;
+    color: #666;
+  }}
+  @top-right {{ content: ""; }}
+
+  @bottom-left {{ content: ""; }}
   @bottom-center {{
     content: "Contents";
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
-
-  @bottom-right {{
-    content: "";
-  }}
+  @bottom-right {{ content: ""; }}
 }}
 
 @page tocpage:left {{
@@ -4356,6 +4332,13 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.5in;
   margin-bottom: 0.68in;
   margin-left: 0.9in;
+
+  @bottom-left {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
 }}
 
 @page tocpage:right {{
@@ -4363,6 +4346,13 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.9in;
   margin-bottom: 0.68in;
   margin-left: 0.5in;
+
+  @bottom-right {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
 }}
 
 @page intentionalblank {{
@@ -4379,41 +4369,20 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 @page indexpage {{
   size: 8.125in 10.25in;
-  margin: 0.805in 0.805in 0.805in 0.805in;
+  margin: 0.805in;
 
-  @top-left {{
-    content: element(bookHeader);
-    width: 2.1in;
-  }}
-
+  @top-left {{ content: element(bookHeader); width: 2.1in; }}
   @top-center {{
     content: "Index of Technical Terms";
     font-family: Helvetica, Arial, sans-serif;
     font-size: 7.5pt;
     color: #666;
   }}
+  @top-right {{ content: ""; }}
 
-  @top-right {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
-
-  @bottom-left {{
-    content: counter(page);
-    font-family: Helvetica, Arial, sans-serif;
-    font-size: 8pt;
-    color: #555;
-  }}
-
-  @bottom-center {{
-    content: element(articleFooter);
-  }}
-
-  @bottom-right {{
-    content: "";
-  }}
+  @bottom-left {{ content: ""; }}
+  @bottom-center {{ content: element(articleFooter); }}
+  @bottom-right {{ content: ""; }}
 }}
 
 @page indexpage:left {{
@@ -4421,6 +4390,13 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.5in;
   margin-bottom: 0.68in;
   margin-left: 0.9in;
+
+  @bottom-left {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
 }}
 
 @page indexpage:right {{
@@ -4428,6 +4404,13 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   margin-right: 0.9in;
   margin-bottom: 0.68in;
   margin-left: 0.5in;
+
+  @bottom-right {{
+    content: counter(page);
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 8pt;
+    color: #555;
+  }}
 }}
 
 html, body {{
@@ -5277,7 +5260,6 @@ code {{
   hyphens: none;
   white-space: normal;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }}
 
 pre code {{
