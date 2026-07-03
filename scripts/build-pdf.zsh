@@ -5563,7 +5563,7 @@ for info in infos:
 </section>
 """)
     else:
-            out.write(f"""
+        out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
