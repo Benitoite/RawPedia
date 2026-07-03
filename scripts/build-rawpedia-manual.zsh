@@ -5015,8 +5015,20 @@ li {{
 
 img, svg {{
   max-width: 100%;
+  max-height: 8.6in;
   height: auto;
+  width: auto;
+  object-fit: contain;
   break-inside: avoid;
+}}
+
+.article-body img,
+.dereferenced-mediawiki-image img {{
+  max-width: 100%;
+  max-height: 4.6in;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }}
 
 figure, table, pre, blockquote, .missing-image {{
@@ -5040,7 +5052,10 @@ pre {{
   border: 0.3pt solid #ddd;
   padding: 0.32em;
   white-space: pre-wrap;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  box-sizing: border-box;
   font-size: 6.4pt;
   line-height: 1.04;
 }}
@@ -5050,6 +5065,10 @@ code {{
   font-size: 6.7pt;
   background: #eee;
   padding: 0 1.5px;
+
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }}
 
 a {{
