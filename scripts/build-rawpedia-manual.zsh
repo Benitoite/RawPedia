@@ -22,15 +22,13 @@ RT_GIT_DIR="$HOME/repo-rt"
 GPLV3_LOGO_SVG="$WORK_DIR/gplv3-logo.svg"
 GPLV3_LOGO_URL="https://upload.wikimedia.org/wikipedia/commons/9/93/GPLv3_Logo.svg"
 
-curl -L "$GPLV3_LOGO_URL" -o "$GPLV3_LOGO_SVG"
+mkdir -p "$WORK_DIR"
 
-GPLV3_LOGO_URI="$(
-python3 - "$GPLV3_LOGO_SVG" <<'PY'
-import sys
-from pathlib import Path
-print(Path(sys.argv[1]).resolve().as_uri())
-PY
-)"
+if [[ ! -s "$GPLV3_LOGO_SVG" ]]; then
+  curl -L "$GPLV3_LOGO_URL" -o "$GPLV3_LOGO_SVG"
+fi
+
+export GPLV3_LOGO_SVG
 
 if [[ -d "$HOME/rawpedia/.git" ]]; then
   RAWPEDIA_GIT_DIR="$HOME/rawpedia"
@@ -250,6 +248,7 @@ RAWPEDIA_QR_URI = RAWPEDIA_QR_SVG.as_uri() if RAWPEDIA_QR_SVG and RAWPEDIA_QR_SV
 
 RT_COVER_URI = RT_COVER_PNG.as_uri()
 RT_HEADER_URI = RT_HEADER_PNG.as_uri()
+GPLV3_LOGO_URI = Path(os.environ["GPLV3_LOGO_SVG"]).resolve().as_uri()
 BUILD_DATE = datetime.now().strftime("%Y-%m-%d")
 COPYRIGHT_YEAR = datetime.now().strftime("%Y")
 
