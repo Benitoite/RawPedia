@@ -215,7 +215,7 @@ jobs:
             echo "❌ Manual build failed."
             echo
             echo "---- build-script.log tail ----"
-            tail -240 rawpedia_book/build-script.log || true
+            tail -240 rawtherapee-manual/build-script.log || true
             echo
             echo "---- workspace root ----"
             ls -la || true
