@@ -4441,8 +4441,8 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 9.5pt;
-  line-height: 1.17;
+  font-size: 9pt;
+  line-height: 1.16;
   color: #000;
 }}
 
@@ -5056,9 +5056,8 @@ body {{
   margin-top: 0;
 }}
 
-.article.short-article {{
-  break-before: auto;
-  margin-top: 1in;
+.short-article {{
+  break-before: page;
 }}
 
 .article h1.article-title {{
@@ -5281,13 +5280,20 @@ code {{
   background: #eee;
   padding: 0 1.5px;
   text-align: left;
-  hyphens: manual;
-  white-space: pre-wrap;
+  hyphens: none;
+  white-space: normal;
   overflow-wrap: anywhere;
+  word-break: break-word;
+}}
+
+pre code {{
+  white-space: pre-wrap;
+  background: transparent;
+  padding: 0;
 }}
 
 a {{
-  color: #0645ad;
+  color: #1a237e;
   text-decoration: none;
 }}
 
