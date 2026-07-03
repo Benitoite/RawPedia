@@ -5076,6 +5076,12 @@ body {{
   hyphens: manual;
 }}
 
+.article-body .article-local-toc a {{
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}}
+
 .article-body h1 {{ font-size: 12.8pt; }}
 .article-body h2 {{ font-size: 11.2pt; }}
 .article-body h3 {{ font-size: 10.2pt; }}
@@ -5311,6 +5317,17 @@ a {{
   background: #eefcff;
   padding: 0 0.8pt;
   border-radius: 0.8pt;
+}}
+
+.article-body h1 a,
+.article-body h2 a,
+.article-body h3 a,
+.article-body h4 a,
+.article-body h5 a,
+.article-body h6 a {{
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
 }}
 
 hr {{
