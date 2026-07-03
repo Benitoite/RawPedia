@@ -211,7 +211,7 @@ jobs:
 
           mkdir -p rawpedia_book
 
-          if ! "./$SCRIPT_PATH" 2>&1 | tee rawpedia_book/build-script.log; then
+          if ! "./$SCRIPT_PATH" 2>&1 | tee rawtherapee_manual/build-script.log; then
             echo "❌ Manual build failed."
             echo
             echo "---- build-script.log tail ----"
