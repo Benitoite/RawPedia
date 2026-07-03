@@ -4519,10 +4519,10 @@ body {{
 
 .article-github-qr img {{
   display: block;
-  width: 1.5in;
-  height: 1.5in;
-  max-width: 1.5in;
-  max-height: 1.5in;
+  width: 1.0in;
+  height: 1.0in;
+  max-width: 1.0in;
+  max-height: 1.0in;
   margin: 0 auto;
   object-fit: contain;
 }}
@@ -4536,7 +4536,7 @@ body {{
 .article-github-qr-url {{
   overflow-wrap: anywhere;
   font-family: Menlo, Consolas, "Courier New", monospace;
-  font-size: 7.5pt;
+  font-size: 7pt;
 }}
 
 .cover {{
