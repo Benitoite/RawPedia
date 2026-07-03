@@ -6638,7 +6638,7 @@ if late_missing:
     print(f"⚠️ Late missing image references merged: {len(seen)}")
     print(f"⚠️ See: {missing_report}")
 
-print("Image resolver complete")print("Image resolver complete")
+print("Image resolver complete")
 IMAGE_RESOLVER
 
 echo
