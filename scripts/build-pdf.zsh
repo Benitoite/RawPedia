@@ -4809,7 +4809,7 @@ body {{
 .license-text {{
   column-count: 2;
   column-gap: 0.2in;
-  column-rule: 0.5pt solid #ddd;
+  column-rule: 1.0pt solid #ddd;
   white-space: normal;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 5.1pt;
@@ -5050,7 +5050,7 @@ body {{
 .article-body {{
   column-count: 2;
   column-gap: 0.2in;
-  column-rule: 0.25pt solid #ccc;
+  column-rule: none;
   min-height: 0;
   text-align: justify;
   hyphens: auto;
@@ -5368,7 +5368,7 @@ hr {{
   columns: 4;
   column-count: 4;
   column-width: 1.15in;
-  column-gap: 0.06in;
+  column-gap: 0.08in;
   column-rule: 0.25pt solid #ccc;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 5.4pt;
