@@ -55,11 +55,11 @@ else
   RAWPEDIA_GIT_DIR="$HOME/RawPedia"
 fi
 
-echo "Getting Frutiger-Bold.otf font file from github"
 FRUTIGER_BOLD_OTF="$WORK_DIR/Frutiger-Bold.otf"
 FRUTIGER_BOLD_URL="https://raw.githubusercontent.com/dwillcode/doubletroubledice/master/assets/converted_fonts/Frutiger-Bold.otf"
 
 if [[ ! -s "$FRUTIGER_BOLD_OTF" ]]; then
+  echo "Getting Frutiger-Bold.otf font file from github"
   curl -L "$FRUTIGER_BOLD_URL" -o "$FRUTIGER_BOLD_OTF"
 fi
 
@@ -4757,7 +4757,7 @@ body {{
 
 .license-text {{
   column-count: 2;
-  column-gap: 0.11in;
+  column-gap: 0.2in;
   column-rule: 0.5pt solid #ddd;
   white-space: normal;
   font-family: Georgia, "Times New Roman", serif;
@@ -4998,7 +4998,7 @@ body {{
 
 .article-body {{
   column-count: 2;
-  column-gap: 1.18em;
+  column-gap: 0.2in;
   column-rule: 0.25pt solid #ccc;
   min-height: 0;
   text-align: justify;
@@ -5183,6 +5183,8 @@ pre {{
   background: #f5f5f5;
   border: 0.3pt solid #ddd;
   padding: 0.32em;
+  text-align: left;
+  hyphens: manual;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-width: 100%;
@@ -5196,8 +5198,9 @@ code {{
   font-size: 6.7pt;
   background: #eee;
   padding: 0 1.5px;
-
-  white-space: normal;
+  text-align: left;
+  hyphens: manual;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }}
 
@@ -6086,7 +6089,7 @@ def local_or_online(value: str) -> str:
 
     # IMPORTANT:
     # Preserve all valid file:// URLs, even when they are outside SOURCE_DIR.
-    # This protects generated QR codes in rawpedia_book/article-qrs/*.svg.
+    # This protects generated QR codes in rawtherapee-manual/article-qrs/*.svg.
     if raw.startswith("file://"):
         local_path = Path(path)
 
@@ -6094,7 +6097,7 @@ def local_or_online(value: str) -> str:
             return local_path.resolve().as_uri()
 
         # If the file:// URL is broken, do not invent a RawPedia URL for
-        # absolute local paths such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+        # absolute local paths such as /Users/rb/rawtherapee-manual/article-qrs/foo.svg.
         # Leave it alone so the later preflight can report the real problem.
         if path.startswith("/"):
             return raw
@@ -6106,7 +6109,7 @@ def local_or_online(value: str) -> str:
 
         return fixed
 
-    # Absolute local filesystem path, such as /Users/rb/rawpedia_book/article-qrs/foo.svg.
+    # Absolute local filesystem path, such as /Users/rb/rawtherapee-manual/article-qrs/foo.svg.
     # Keep it local if it exists.
     if path.startswith("/"):
         local_path = Path(path)
