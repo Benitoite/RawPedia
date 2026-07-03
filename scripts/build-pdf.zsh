@@ -4124,8 +4124,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
-  @top-left {{ content: ""; }}
-  @top-right {{ content: element(bookHeader); width: 2.1in; }}
+  @top-right {{ content: ""; }}
+  @top-left {{ content: element(bookHeader); width: 2.1in; }}
 
   @bottom-left {{ content: element(articleFooter); }}
   @bottom-right {{
