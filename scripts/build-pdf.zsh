@@ -4104,7 +4104,7 @@ h1, h2, h3, h4, h5, h6,
 
 @page {{
   size: 8.125in 10.25in;
-  margin-top: 0.9in;
+  margin-top: 0.65in;
   margin-right: 0.9in;
   margin-bottom: 0.72in;
   margin-left: 0.5in;
@@ -4119,7 +4119,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page articlepage:left {{
-  margin-top: 0.9in;
+  margin-top: 0.65in;
   margin-right: 0.4in;
   margin-bottom: 0.72in;
   margin-left: 0.8in;
@@ -4137,7 +4137,7 @@ h1, h2, h3, h4, h5, h6,
 }}
 
 @page articlepage:right {{
-  margin-top: 0.9in;
+  margin-top: 0.65in;
   margin-right: 0.8in;
   margin-bottom: 0.72in;
   margin-left: 0.4in;
@@ -5013,7 +5013,7 @@ body {{
 .article {{
   page: articlepage;
   break-before: auto;
-  margin-top: 0.9in;
+  margin-top: 0.65in;
   string-set: article attr(data-title);
 }}
 
