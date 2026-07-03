@@ -483,17 +483,3 @@ jobs:
           path: |
             rawtherapee_manual.pdf
           if-no-files-found: warn
-          
-      - name: Upload build reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rawpedia-book-reports
-          path: |
-            rawpedia_book/book.html
-            rawpedia_book/*.txt
-            rawpedia_book/*.svg
-            rawpedia_book/*.png
-            rawpedia_book/*.log
-            rawpedia_book/article-qrs/*.svg
-          if-no-files-found: warn
