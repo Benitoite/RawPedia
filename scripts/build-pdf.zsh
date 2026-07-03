@@ -4124,15 +4124,15 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.8in;
 
+  @top-left {{ content: ""; }}
+  @top-right {{ content: element(bookHeader); width: 2.1in; }}
+
+  @bottom-left {{ content: element(articleFooter); }}
   @bottom-right {{
     content: counter(page);
     font-family: Helvetica, Arial, sans-serif;
     font-size: 8pt;
     color: #555;
-  }}
-
-  @bottom-left {{
-    content: element(articleFooter);
   }}
 }}
 
@@ -4142,9 +4142,8 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.4in;
 
-  @bottom-right {{
-    content: element(articleFooter);
-  }}
+  @top-right {{ content: element(bookHeader); width: 2.1in; }}
+  @top-left {{ content: ""; }}
 
   @bottom-left {{
     content: counter(page);
@@ -4152,6 +4151,7 @@ h1, h2, h3, h4, h5, h6,
     font-size: 8pt;
     color: #555;
   }}
+  @bottom-right {{ content: element(articleFooter); }}
 }}
 
 @page cover {{
@@ -4420,7 +4420,7 @@ body {{
 .running-book-header {{
   position: running(bookHeader);
   display: block;
-  width: 2.1in;
+  width: 100%;
   height: 0.32in;
   font-family: Helvetica, Arial, sans-serif;
   font-size: 6.7pt;
@@ -4431,6 +4431,7 @@ body {{
 .running-book-header a {{
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.055in;
   color: #666;
   text-decoration: none;
@@ -4519,10 +4520,10 @@ body {{
 
 .article-github-qr img {{
   display: block;
-  width: 1.0in;
-  height: 1.0in;
-  max-width: 1.0in;
-  max-height: 1.0in;
+  width: 0.8in;
+  height: 0.8in;
+  max-width: 0.8in;
+  max-height: 0.8in;
   margin: 0 auto;
   object-fit: contain;
 }}
@@ -5303,6 +5304,13 @@ pre code {{
 a {{
   color: #030842;
   text-decoration: none;
+}}
+
+.article-body a {{
+  color: #030842;
+  background: #eefcff;
+  padding: 0 0.8pt;
+  border-radius: 0.8pt;
 }}
 
 hr {{
