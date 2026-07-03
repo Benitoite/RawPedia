@@ -55,15 +55,15 @@ else
   RAWPEDIA_GIT_DIR="$HOME/RawPedia"
 fi
 
-echo "Getting frutiger.ttf font file from github"
-FRUTIGER_TTF="$WORK_DIR/frutiger.ttf"
-FRUTIGER_URL="https://raw.githubusercontent.com/yigitbey/dotfiles/master/.fonts/frutiger.ttf"
+echo "Getting Frutiger-Bold.otf font file from github"
+FRUTIGER_BOLD_OTF="$WORK_DIR/Frutiger-Bold.otf"
+FRUTIGER_BOLD_URL="https://raw.githubusercontent.com/dwillcode/doubletroubledice/master/assets/converted_fonts/Frutiger-Bold.otf"
 
-if [[ ! -s "$FRUTIGER_TTF" ]]; then
-  curl -L "$FRUTIGER_URL" -o "$FRUTIGER_TTF"
+if [[ ! -s "$FRUTIGER_BOLD_OTF" ]]; then
+  curl -L "$FRUTIGER_BOLD_URL" -o "$FRUTIGER_BOLD_OTF"
 fi
 
-export FRUTIGER_TTF
+export FRUTIGER_BOLD_OTF
 
 RT_LICENSE_TXT=""
 for candidate in \
@@ -258,7 +258,7 @@ RAWPEDIA_QR_SVG = Path(sys.argv[11]).resolve() if len(sys.argv) > 11 else None
 RAWPEDIA_ONLINE_URL = sys.argv[12] if len(sys.argv) > 12 else "https://rawpedia.pixls.us"
 RAWPEDIA_QR_URI = RAWPEDIA_QR_SVG.as_uri() if RAWPEDIA_QR_SVG and RAWPEDIA_QR_SVG.exists() else ""
 
-FRUTIGER_URI = Path(os.environ["FRUTIGER_TTF"]).resolve().as_uri()
+FRUTIGER_BOLD_URI = Path(os.environ["FRUTIGER_BOLD_OTF"]).resolve().as_uri()
 
 RT_COVER_URI = RT_COVER_PNG.as_uri()
 RT_HEADER_URI = RT_HEADER_PNG.as_uri()
@@ -4000,18 +4000,21 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 <title>RawTherapee Manual</title>
 <style>
 
-@font-face {{
-  font-family: "FrutigerLocal";
-  src: url("{FRUTIGER_URI}") format("truetype");
-  font-weight: normal;
-  font-style: normal;
-}}
-
 .cover-title-front,
 .rainbow-title,
 .rainbow-letter,
 .rainbow-letter-glow,
 .rainbow-letter-front,
+.half-title-rainbow-title {{
+  font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
+  font-weight: 700;
+}}
+.cover-title-front,
+.rainbow-title,
+.rainbow-letter,
+.rainbow-letter-glow,
+.rainbow-letter-front,
+.article h1.article-title,
 .cover-version,
 .cover-date,
 .cover-date-layer,
@@ -4024,6 +4027,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 .part-page h1,
 .technical-index h1 {{
   font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
+  font-weight: 700;
 }}
 
 @page {{
@@ -4757,7 +4761,7 @@ body {{
   column-rule: 0.5pt solid #ddd;
   white-space: normal;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 5pt;
+  font-size: 5.1pt;
   line-height: 1.09;
   text-align: justify;
   overflow-wrap: normal;
@@ -4793,7 +4797,7 @@ body {{
 }}
 
 .half-title h1 {{
-  font-size: 26pt;
+  font-size: 42pt;
   margin-bottom: 0.2in;
 }}
 
