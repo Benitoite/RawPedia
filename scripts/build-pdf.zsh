@@ -5075,6 +5075,13 @@ body {{
   hyphens: manual;
 }}
 
+.article-body h1 {{ font-size: 12.8pt; }}
+.article-body h2 {{ font-size: 11.2pt; }}
+.article-body h3 {{ font-size: 10.2pt; }}
+.article-body h4 {{ font-size: 9.6pt; }}
+.article-body h5 {{ font-size: 9.3pt; }}
+.article-body h6 {{ font-size: 9.1pt; }}
+
 .article-body > :first-child {{
   break-before: auto !important;
   page-break-before: auto !important;
