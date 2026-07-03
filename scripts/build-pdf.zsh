@@ -5570,21 +5570,21 @@ hr {{
 </div>
 """)
 
-    print(f"  ➜ [{section}] {info['title']}")
+        print(f"  ➜ [{section}] {info['title']}")
 
-    article_num += 1
-    article_classes = ["article"]
+        article_num += 1
+        article_classes = ["article"]
 
-    if article_num == 1:
-        article_classes.append("first-article")
-    elif article_is_major(info["content"], info["title"]):
-        article_classes.append("major-article")
-    else:
-        article_classes.append("short-article")
+        if article_num == 1:
+            article_classes.append("first-article")
+        elif article_is_major(info["content"], info["title"]):
+            article_classes.append("major-article")
+        else:
+            article_classes.append("short-article")
 
-    article_class = " ".join(article_classes)
+        article_class = " ".join(article_classes)
 
-    out.write(f"""
+        out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
