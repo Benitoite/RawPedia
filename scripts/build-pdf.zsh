@@ -5315,6 +5315,7 @@ hr {{
 .index-pages a + a::before {{
   content: ", ";
 }}
+
 </style>
 </head>
 <body>
@@ -5509,44 +5510,44 @@ hr {{
 
         return "\n".join(lines)
 
-def strip_duplicate_article_heading(content: str, title: str) -> str:
-    title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
+    def strip_duplicate_article_heading(content: str, title: str) -> str:
+        title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
 
-    def clean_text(s: str) -> str:
-        s = re.sub(r"<[^>]+>", " ", s)
-        s = html.unescape(s)
-        return re.sub(r"\s+", " ", s).strip().lower()
+        def clean_text(s: str) -> str:
+            s = re.sub(r"<[^>]+>", " ", s)
+            s = html.unescape(s)
+            return re.sub(r"\s+", " ", s).strip().lower()
 
-    pattern = re.compile(
-        r"""^\s*
-        <h[1-3]\b[^>]*>.*?</h[1-3]>
-        """,
-        flags=re.I | re.S | re.X,
-    )
+        pattern = re.compile(
+            r"""^\s*
+            <h[1-3]\b[^>]*>.*?</h[1-3]>
+            """,
+            flags=re.I | re.S | re.X,
+        )
 
-    m = pattern.match(content)
-    if not m:
+        m = pattern.match(content)
+        if not m:
+            return content
+
+        if clean_text(m.group(0)) == title_plain:
+            return content[m.end():].lstrip()
+
         return content
 
-    if clean_text(m.group(0)) == title_plain:
-        return content[m.end():].lstrip()
+    current_section = None
+    part_num = 0
+    article_num = 0
 
-    return content
+    for info in infos:
+        section = info["section"]
+        section_id = info["section_id"]
 
-current_section = None
-part_num = 0
-article_num = 0
+        if section != current_section:
+            current_section = section
+            part_num += 1
+            part_subtoc = build_part_subtoc(section)
 
-for info in infos:
-    section = info["section"]
-    section_id = info["section_id"]
-
-    if section != current_section:
-        current_section = section
-        part_num += 1
-        part_subtoc = build_part_subtoc(section)
-
-        out.write(f"""
+            out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5562,8 +5563,8 @@ for info in infos:
 </div>
 </section>
 """)
-    else:
-        out.write(f"""
+        else:
+            out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
