@@ -5424,26 +5424,27 @@ hr {{
 <div class="toc">
 """)
 
-current_section = None
+    current_section = None
 
-for info in infos:
-    section = info["section"]
-    section_id = info["section_id"]
+    for info in infos:
+        section = info["section"]
+        section_id = info["section_id"]
 
-    if section != current_section:
-        if current_section is not None:
-            out.write("</div>\n")
-        out.write('<div class="toc-part">\n')
-        out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
-        current_section = section
+        if section != current_section:
+            if current_section is not None:
+                out.write("</div>\n")
+            out.write('<div class="toc-part">\n')
+            out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
+            current_section = section
 
-    out.write(
-        f'<a href="#page-{html.escape(info["id"])}">'
-        f'{html.escape(info["title"])}</a>\n'
-    )
+        out.write(
+            f'<a href="#page-{html.escape(info["id"])}">'
+            f'{html.escape(info["title"])}</a>\n'
+        )
 
-if current_section is not None:
-    out.write("</div>\n")
+    if current_section is not None:
+        out.write("</div>\n")
+
     out.write("""
 <div class="toc-part">
 <h2>Back Matter</h2>
@@ -5453,47 +5454,47 @@ if current_section is not None:
 </section>
 """)
 
-section_infos = defaultdict(list)
+    section_infos = defaultdict(list)
 
-for section_info in infos:
-    section_infos[section_info["section"]].append(section_info)
+    for section_info in infos:
+        section_infos[section_info["section"]].append(section_info)
 
-def build_part_subtoc(section: str) -> str:
-    refs = section_infos.get(section, [])
+    def build_part_subtoc(section: str) -> str:
+        refs = section_infos.get(section, [])
 
-    if not refs:
-        return ""
+        if not refs:
+            return ""
 
-    lines = []
-    lines.append('<div class="part-subtoc">')
-    lines.append('<div class="part-subtoc-title">In this section</div>')
-    lines.append('<div class="part-subtoc-body">')
+        lines = []
+        lines.append('<div class="part-subtoc">')
+        lines.append('<div class="part-subtoc-title">In this section</div>')
+        lines.append('<div class="part-subtoc-body">')
 
-    for ref in refs:
-        lines.append(
-            f'<a href="#page-{html.escape(ref["id"])}">'
-            f'{html.escape(ref["title"])}</a>'
-        )
+        for ref in refs:
+            lines.append(
+                f'<a href="#page-{html.escape(ref["id"])}">'
+                f'{html.escape(ref["title"])}</a>'
+            )
 
-    lines.append('</div>')
-    lines.append('</div>')
+        lines.append('</div>')
+        lines.append('</div>')
 
-    return "\n".join(lines)
+        return "\n".join(lines)
 
-current_section = None
-part_num = 0
-article_num = 0
+    current_section = None
+    part_num = 0
+    article_num = 0
 
-for info in infos:
-    section = info["section"]
-    section_id = info["section_id"]
+    for info in infos:
+        section = info["section"]
+        section_id = info["section_id"]
 
-    if section != current_section:
-        current_section = section
-        part_num += 1
-        part_subtoc = build_part_subtoc(section)
+        if section != current_section:
+            current_section = section
+            part_num += 1
+            part_subtoc = build_part_subtoc(section)
 
-        out.write(f"""
+            out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5509,28 +5510,28 @@ for info in infos:
 </div>
 </section>
 """)
-else:
-    out.write(f"""
+        else:
+            out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
 """)
 
-    print(f"  ➜ [{section}] {info['title']}")
+        print(f"  ➜ [{section}] {info['title']}")
 
-    article_num += 1
-    article_classes = ["article"]
+        article_num += 1
+        article_classes = ["article"]
 
-    if article_num == 1:
-        article_classes.append("first-article")
-    elif article_is_major(info["content"], info["title"]):
-        article_classes.append("major-article")
-    else:
-        article_classes.append("short-article")
+        if article_num == 1:
+            article_classes.append("first-article")
+        elif article_is_major(info["content"], info["title"]):
+            article_classes.append("major-article")
+        else:
+            article_classes.append("short-article")
 
-    article_class = " ".join(article_classes)
+        article_class = " ".join(article_classes)
 
-    out.write(f"""
+        out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
@@ -5589,8 +5590,8 @@ else:
             cls = ' class="primary"' if ref["id"] in primary_ids else ""
             out.write(f'<a{cls} href="{html.escape(href)}" title="{html.escape(ref["title"])}"></a>')
 
-        out.write('</span>')
-        out.write('</div>\n')
+        out.write("</span>")
+        out.write("</div>\n")
 
     out.write("""
 </div>
