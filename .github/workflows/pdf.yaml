@@ -22,7 +22,7 @@ on:
       script_path:
         description: Manual builder script path
         required: true
-        default: scripts/build-rawpedia-manual.zsh
+        default: scripts/build-pdf.zsh
       rawpedia_qr_jobs:
         description: QR generation jobs
         required: true
@@ -178,7 +178,7 @@ jobs:
           RT_COVER_ICNS: ${{ github.workspace }}/repo-rt/tools/osx/rawtherapee.icns
           RT_HEADER_ICO: ${{ github.workspace }}/repo-rt/rtdata/images/rawtherapee.ico
           RT_AUTHORS_TXT: ${{ github.workspace }}/repo-rt/AUTHORS.txt
-          SCRIPT_PATH: ${{ inputs.script_path || 'scripts/build-rawpedia-manual.zsh' }}
+          SCRIPT_PATH: ${{ inputs.script_path || 'scripts/build-pdf.zsh' }}
         run: |
           set -euo pipefail
 
