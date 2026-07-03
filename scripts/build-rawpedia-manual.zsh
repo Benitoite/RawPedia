@@ -109,8 +109,8 @@ git_version_string() {
 RT_GIT_VERSION="$(git_version_string "$RT_GIT_DIR" "RawTherapee")"
 RAWPEDIA_GIT_VERSION="$(git_version_string "$RAWPEDIA_GIT_DIR" "RawPedia")"
 
-echo "✅ $RT_GIT_VERSION"
-echo "✅ $RAWPEDIA_GIT_VERSION"
+echo "$RT_GIT_VERSION"
+echo "$RAWPEDIA_GIT_VERSION"
 
 echo "🎨 Converting cover .icns icon..."
 
@@ -148,7 +148,7 @@ if command -v magick >/dev/null 2>&1; then
     ICO_SCENE="0"
   fi
 
-  echo "✅ Using header .ico frame: $ICO_SCENE"
+  echo "Using header .ico frame: $ICO_SCENE"
 
   magick "${RT_HEADER_ICO}[$ICO_SCENE]" \
     -background none \
@@ -202,7 +202,7 @@ find "$SOURCE_DIR" -type f -name "*.html" \
   | sort > "$WORK_DIR/pages-all.txt"
 
 TOTAL_ALL=$(wc -l < "$WORK_DIR/pages-all.txt" | tr -d ' ')
-echo "✅ Found $TOTAL_ALL total HTML pages"
+echo "Found $TOTAL_ALL total HTML pages"
 
 echo "📚 Building book-style English manual..."
 
@@ -1125,7 +1125,7 @@ def find_content_file_for_article_rel(rel: str) -> Path | None:
             print(f"❌ build_content_file_index() returned bad value: {_content_file_index!r}")
             return None
 
-        print(f"✅ Content source lookup keys: {len(_content_file_index)}")
+        print(f"Content source lookup keys: {len(_content_file_index)}")
 
         if len(_content_file_index) < 20:
             print("❌ Content source lookup index is suspiciously small.")
@@ -1540,7 +1540,7 @@ def harvest_contributors_from_contents():
             for contributor in extract_contributors_from_metadata(text):
                 found.add(contributor)
 
-    print(f"✅ Hugo source metadata files scanned: {scanned}")
+    print(f"Hugo source metadata files scanned: {scanned}")
     return found
 
 def read_authors_file():
@@ -3826,7 +3826,7 @@ for info in infos:
     qr_case_lines.append("")
 
 qr_case_report.write_text("\n".join(qr_case_lines), encoding="utf-8")
-print(f"✅ Article GitHub source map report: {qr_case_report}")
+print(f"Article GitHub source map report: {qr_case_report}")
 
 bad_qr_sources = []
 
@@ -3861,7 +3861,7 @@ if bad_qr_redirect_sources:
         print(f"     target:    {qr_redirect_target_for_rel(content_rel)}")
     sys.exit(1)
 
-print("✅ QR resolver selected non-redirect source files")
+print("QR resolver selected non-redirect source files")
 
 for info in infos:
     url = info["github_url"]
@@ -3879,10 +3879,10 @@ if bad_qr_sources:
         print(f"     github:    {url}")
     sys.exit(1)
 
-print("✅ QR GitHub source URLs are English-only")
+print("QR GitHub source URLs are English-only")
 
-print("✅ Final QR resolver selected non-redirect source files")
-print("✅ QR GitHub source URLs do not point to redirect source files")
+print("Final QR resolver selected non-redirect source files")
+print("QR GitHub source URLs do not point to redirect source files")
 
 for info in infos:
     info["content"] = rewrite_article_links_to_manual(
@@ -3893,9 +3893,9 @@ for info in infos:
 
     info["content"] = normalize_internal_href_fragments(info["content"])
 
-print(f"✅ Manual internal link routes mapped: {len(manual_link_map)}")
-print(f"✅ CONTENTS_DIR used for QR source lookup: {CONTENTS_DIR}")
-print(f"✅ CONTENTS_DIR exists: {CONTENTS_DIR.exists()}")
+print(f"Manual internal link routes mapped: {len(manual_link_map)}")
+print(f"CONTENTS_DIR used for QR source lookup: {CONTENTS_DIR}")
+print(f"CONTENTS_DIR exists: {CONTENTS_DIR.exists()}")
 
 for contributor in harvest_contributors_from_contents():
     all_contributors.add(contributor)
@@ -3909,35 +3909,35 @@ contributors_sorted = sorted(
     key=lambda name: name.lower()
 )
 
-print(f"✅ English content pages selected: {len(infos)}")
-print(f"✅ Redirect-like pages suppressed: {len(suppressed_redirects)}")
-print(f"✅ Main Page variants suppressed: {len(suppressed_main_pages)}")
-print(f"✅ Contributors found in ~/RawPedia/content markdown metadata: {len(contributors_sorted)}")
-print(f"✅ Authors found in AUTHORS.txt: {len(authors_from_file)}")
-print(f"✅ Index of technical terms with hits: {len(technical_index)}")
-print(f"✅ Cover icon source: {RT_COVER_PNG}")
-print(f"✅ Header TOC icon source: {RT_HEADER_PNG}")
-print(f"✅ RawPedia QR code source: {RAWPEDIA_QR_SVG}")
+print(f"English content pages selected: {len(infos)}")
+print(f"Redirect-like pages suppressed: {len(suppressed_redirects)}")
+print(f"Main Page variants suppressed: {len(suppressed_main_pages)}")
+print(f"Contributors found in ~/RawPedia/content markdown metadata: {len(contributors_sorted)}")
+print(f"Authors found in AUTHORS.txt: {len(authors_from_file)}")
+print(f"Index of technical terms with hits: {len(technical_index)}")
+print(f"Cover icon source: {RT_COVER_PNG}")
+print(f"Header TOC icon source: {RT_HEADER_PNG}")
+print(f"RawPedia QR code source: {RAWPEDIA_QR_SVG}")
 
 if suppressed_redirects:
     report = OUTPUT_HTML.parent / "suppressed-redirect-pages.txt"
     report.write_text("\n".join(sorted(set(suppressed_redirects))) + "\n", encoding="utf-8")
-    print(f"✅ Suppressed redirect report: {report}")
+    print(f"Suppressed redirect report: {report}")
 
 if suppressed_main_pages:
     report = OUTPUT_HTML.parent / "suppressed-main-pages.txt"
     report.write_text("\n".join(sorted(set(suppressed_main_pages))) + "\n", encoding="utf-8")
-    print(f"✅ Suppressed Main Page variants report: {report}")
+    print(f"Suppressed Main Page variants report: {report}")
 
 if contributors_sorted:
     report = OUTPUT_HTML.parent / "contributors.txt"
     report.write_text("\n".join(contributors_sorted) + "\n", encoding="utf-8")
-    print(f"✅ Contributor report: {report}")
+    print(f"Contributor report: {report}")
 
 if authors_from_file:
     report = OUTPUT_HTML.parent / "authors.txt"
     report.write_text("\n".join(authors_from_file) + "\n", encoding="utf-8")
-    print(f"✅ AUTHORS.txt report: {report}")
+    print(f"AUTHORS.txt report: {report}")
 
 if technical_index:
     report = OUTPUT_HTML.parent / "technical-index-terms.txt"
@@ -3951,7 +3951,7 @@ if technical_index:
             lines.append(f"  - {ref['title']} [{ref['rel']}]{marker}")
 
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"✅ Index of technical terms report: {report}")
+    print(f"Index of technical terms report: {report}")
 
 contributors_display = ", ".join(contributors_sorted)
 
@@ -5358,79 +5358,77 @@ hr {{
 <div class="toc">
 """)
 
-current_section = None
+    current_section = None
 
-for info in infos:
-    section = info["section"]
-    section_id = info["section_id"]
+    for info in infos:
+        section = info["section"]
+        section_id = info["section_id"]
 
-    if section != current_section:
-        if current_section is not None:
-            out.write("</div>\n")
-        out.write('<div class="toc-part">\n')
-        out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
-        current_section = section
+        if section != current_section:
+            if current_section is not None:
+                out.write("</div>\n")
+            out.write('<div class="toc-part">\n')
+            out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
+            current_section = section
 
-    out.write(
-        f'<a href="#page-{html.escape(info["id"])}">'
-        f'{html.escape(info["title"])}</a>\n'
-    )
+        out.write(
+            f'<a href="#page-{html.escape(info["id"])}">'
+            f'{html.escape(info["title"])}</a>\n'
+        )
 
-if current_section is not None:
-    out.write("</div>\n")
+    if current_section is not None:
+        out.write("</div>\n")
+
     out.write("""
 <div class="toc-part">
 <h2>Back Matter</h2>
 <a href="#technical-index">Index of Technical Terms</a>
 </div>
-""")
-out.write("""
 </div>
 </section>
 """)
 
-section_infos = defaultdict(list)
+    section_infos = defaultdict(list)
 
-for section_info in infos:
-    section_infos[section_info["section"]].append(section_info)
+    for section_info in infos:
+        section_infos[section_info["section"]].append(section_info)
 
-def build_part_subtoc(section: str) -> str:
-    refs = section_infos.get(section, [])
+    def build_part_subtoc(section: str) -> str:
+        refs = section_infos.get(section, [])
 
-    if not refs:
-        return ""
+        if not refs:
+            return ""
 
-    lines = []
-    lines.append('<div class="part-subtoc">')
-    lines.append('<div class="part-subtoc-title">In this section</div>')
-    lines.append('<div class="part-subtoc-body">')
+        lines = []
+        lines.append('<div class="part-subtoc">')
+        lines.append('<div class="part-subtoc-title">In this section</div>')
+        lines.append('<div class="part-subtoc-body">')
 
-    for ref in refs:
-        lines.append(
-            f'<a href="#page-{html.escape(ref["id"])}">'
-            f'{html.escape(ref["title"])}</a>'
-        )
+        for ref in refs:
+            lines.append(
+                f'<a href="#page-{html.escape(ref["id"])}">'
+                f'{html.escape(ref["title"])}</a>'
+            )
 
-    lines.append('</div>')
-    lines.append('</div>')
+        lines.append('</div>')
+        lines.append('</div>')
 
-    return "\n".join(lines)
+        return "\n".join(lines)
 
-current_section = None
-part_num = 0
-article_num = 0
+    current_section = None
+    part_num = 0
+    article_num = 0
 
-for info in infos:
-    section = info["section"]
-    section_id = info["section_id"]
+    for info in infos:
+        section = info["section"]
+        section_id = info["section_id"]
 
-    if section != current_section:
-        current_section = section
-        part_num += 1
+        if section != current_section:
+            current_section = section
+            part_num += 1
+            part_subtoc = build_part_subtoc(section)
 
-        part_subtoc = build_part_subtoc(section)
-
-        out.write(f"""
+            out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5446,29 +5444,28 @@ for info in infos:
 </div>
 </section>
 """)
-    else:
+        else:
             out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
 """)
 
-            print(f"  ➜ [{section}] {info['title']}")
+        print(f"  ➜ [{section}] {info['title']}")
 
-            article_num += 1
+        article_num += 1
+        article_classes = ["article"]
 
-            article_classes = ["article"]
+        if article_num == 1:
+            article_classes.append("first-article")
+        elif article_is_major(info["content"], info["title"]):
+            article_classes.append("major-article")
+        else:
+            article_classes.append("short-article")
 
-            if article_num == 1:
-                article_classes.append("first-article")
-            elif article_is_major(info["content"], info["title"]):
-                article_classes.append("major-article")
-            else:
-                article_classes.append("short-article")
+        article_class = " ".join(article_classes)
 
-            article_class = " ".join(article_classes)
-
-    out.write(f"""
+        out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
@@ -5533,13 +5530,9 @@ for info in infos:
     out.write("""
 </div>
 </section>
-""")
-
-    out.write("""
 </body>
 </html>
 """)
-
 
 html_text = OUTPUT_HTML.read_text(encoding="utf-8", errors="replace")
 
@@ -5547,9 +5540,9 @@ total_img_tags = len(re.findall(r"<img\b", html_text, flags=re.I))
 file_image_refs = len(re.findall(r'src=["\']file://', html_text, flags=re.I))
 missing_image_boxes = len(re.findall(r'class=["\']missing-image["\']', html_text, flags=re.I))
 
-print(f"✅ HTML image tags: {total_img_tags}")
-print(f"✅ HTML local file image refs: {file_image_refs}")
-print(f"✅ HTML missing-image placeholders: {missing_image_boxes}")
+print(f"HTML image tags: {total_img_tags}")
+print(f"HTML local file image refs: {file_image_refs}")
+print(f"HTML missing-image placeholders: {missing_image_boxes}")
 
 if total_img_tags < 20:
     print("❌ Suspiciously few image tags in generated HTML.")
@@ -5610,10 +5603,10 @@ if missing_images:
     print(f"⚠️ Missing image references: {len(unique_entries)}")
     print(f"⚠️ See: {report}")
 else:
-    print("✅ No missing image references detected")
+    print("No missing image references detected")
 PY
 
-echo "✅ HTML book complete: $OUTPUT_HTML"
+echo "HTML book complete: $OUTPUT_HTML"
 echo
 echo "🔳 Checking generated article QR image paths..."
 
@@ -5682,7 +5675,7 @@ if missing:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ Article QR images are local file URLs")
+print("Article QR images are local file URLs")
 CHECK_ARTICLE_QR_PATHS
 echo
 echo "🔗 Checking internal href targets..."
@@ -5730,7 +5723,7 @@ if missing:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ Internal href targets all exist")
+print("Internal href targets all exist")
 CHECK_INTERNAL_HREF_TARGETS
 echo
 echo "🔗 Checking duplicate id/name targets..."
@@ -5763,13 +5756,13 @@ if dupes:
         print(f"   {count}x #{target}")
     sys.exit(1)
 
-print("✅ No duplicate id/name targets")
+print("No duplicate id/name targets")
 CHECK_DUPLICATE_TARGETS
 INDEX_BODY_COUNT="$(grep -c '<div class="index-body">' "$OUTPUT_HTML" || true)"
 TECH_INDEX_COUNT="$(grep -c '<section class="technical-index" id="technical-index">' "$OUTPUT_HTML" || true)"
 
-echo "✅ Technical index section count: $TECH_INDEX_COUNT"
-echo "✅ Index body count: $INDEX_BODY_COUNT"
+echo "Technical index section count: $TECH_INDEX_COUNT"
+echo "Index body count: $INDEX_BODY_COUNT"
 
 if [[ "$TECH_INDEX_COUNT" -ne 1 || "$INDEX_BODY_COUNT" -ne 1 ]]; then
   echo "❌ Technical index was written more than once."
@@ -5920,7 +5913,7 @@ print(f"mediawiki image refs before: {before_mediawiki}")
 print(f"mediawiki image refs after:  {after_mediawiki}")
 print(f"img tags before: {before_imgs}")
 print(f"img tags after:  {after_imgs}")
-print("✅ MediaWiki-style image dereference complete")
+print("MediaWiki-style image dereference complete")
 DEREFERENCE_MEDIAWIKI_IMAGES
 
 echo "🖼 Final image URL cleanup before PDF render..."
@@ -6126,7 +6119,7 @@ OUTPUT_HTML.write_text(s, encoding="utf-8")
 print(f"Before cleanup: local file asset refs={before_file_asset_refs}, root-relative asset attrs={before_root}")
 print(f"After cleanup:  local file asset refs={after_file_asset_refs}, root-relative asset attrs={after_root}")
 
-print("✅ Final image URL cleanup complete")
+print("Final image URL cleanup complete")
 RAWPEDIA_IMAGE_URL_CLEANUP
 echo "🔧 Preparing final image cleanup before PDF render..."
 
@@ -6424,7 +6417,7 @@ print(f"src file before: {before_src_file}")
 print(f"src file after:  {after_src_file}")
 print(f"src http before: {before_src_http}")
 print(f"src http after:  {after_src_http}")
-print("✅ Image resolver complete")
+print("Image resolver complete")
 IMAGE_RESOLVER
 
 echo
@@ -6487,7 +6480,7 @@ if missing:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ Article QR images are still local file URLs after cleanup")
+print("Article QR images are still local file URLs after cleanup")
 CHECK_ARTICLE_QR_PATHS_AFTER_CLEANUP
 
 echo
@@ -6562,7 +6555,7 @@ if file_count + http_count + data_count < 50:
     print("❌ Too few usable image src values. Refusing to render image-less PDF.")
     sys.exit(1)
 
-print("✅ Final image preflight passed")
+print("Final image preflight passed")
 FINAL_IMAGE_PREFLIGHT
 
 echo
@@ -6856,7 +6849,7 @@ if bad:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ Final href sanitizer passed")
+print("Final href sanitizer passed")
 FINAL_HREF_SANITIZER
 
 echo
@@ -7032,7 +7025,7 @@ if bad:
         print(f"   {h}")
     sys.exit(1)
 
-print("✅ No file:// anchor hrefs remain")
+print("No file:// anchor hrefs remain")
 CHECK_FILE_HREFS
 
 sanitize_hrefs_for_weasyprint() {
@@ -7317,7 +7310,7 @@ if bad:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ href sanitizer passed")
+print("href sanitizer passed")
 SANITIZE_HREFS_FOR_WEASYPRINT
 }
 
@@ -7331,7 +7324,7 @@ print(Path(sys.argv[1]).resolve().parent.as_uri() + "/")
 PY
 )"
 
-echo "✅ PDF base URL: $BOOK_BASE_URL"
+echo "PDF base URL: $BOOK_BASE_URL"
 
 python3 - "$OUTPUT_HTML" <<'SANITIZE_PDF_LINKS'
 from bs4 import BeautifulSoup
@@ -7422,7 +7415,7 @@ def sanitize_pdf_links(book_html_path):
             removed += 1
 
     Path(book_html_path).write_text(str(soup), encoding="utf-8")
-    print(f"✅ Sanitized PDF links: rewrote {changed}, removed {removed}")
+    print(f"Sanitized PDF links: rewrote {changed}, removed {removed}")
 
 sanitize_pdf_links(sys.argv[1])
 SANITIZE_PDF_LINKS
@@ -7513,7 +7506,7 @@ if bad_fragment_uris:
         print(f"   {s}")
     sys.exit(1)
 
-print("✅ PDF link-action check complete")
+print("PDF link-action check complete")
 CHECK_PDF_LINK_ACTIONS
 
 echo
@@ -7645,7 +7638,7 @@ if "publisher-final-pages-style" not in s:
 s = s.replace("</body>", injected + "\n</body>")
 
 html_path.write_text(s, encoding="utf-8")
-print(f"✅ Injected {pad_needed} padding page(s) plus 2 final logo pages")
+print(f"Injected {pad_needed} padding page(s) plus 2 final logo pages")
 INJECT_FINAL_PAGES
 
 echo "📄 Rendering final PDF in one WeasyPrint pass so internal links survive..."
@@ -7660,7 +7653,7 @@ print(Path(sys.argv[1]).resolve().parent.as_uri() + "/")
 PY
 )"
 
-echo "✅ PDF base URL: $BOOK_BASE_URL"
+echo "PDF base URL: $BOOK_BASE_URL"
 
 weasyprint \
   --base-url "$BOOK_BASE_URL" \
@@ -7714,11 +7707,11 @@ if file_uris:
         print(f"   {item}")
     sys.exit(1)
 
-print("✅ Final PDF contains no file:// hyperlink annotations")
+print("Final PDF contains no file:// hyperlink annotations")
 CHECK_FINAL_PDF_FILE_LINKS
 
-echo "✅ Final publisher-ready PDF complete: $OUTPUT_PDF"
-echo "✅ Final page count: $FINAL_PAGE_TOTAL"
+echo "Final publisher-ready PDF complete: $OUTPUT_PDF"
+echo "Final page count: $FINAL_PAGE_TOTAL"
 
 if [[ "$FINAL_PAGE_TOTAL" != "$EXPECTED_FINAL_TOTAL" ]]; then
   echo "❌ Final PDF page count mismatch."
@@ -7735,8 +7728,8 @@ if (( FINAL_PAGE_TOTAL % 4 != 0 )); then
   exit 1
 fi
 
-echo "✅ Final PDF includes original + padding + final logo pages."
-echo "✅ Final PDF page count is divisible by 4."
+echo "Final PDF includes original + padding + final logo pages."
+echo "Final PDF page count is divisible by 4."
 
 if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
   echo "⚠️ Some images were still missing."
