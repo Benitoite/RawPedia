@@ -4578,7 +4578,7 @@ body {{
 
 .rainbow-title-space {{
   display: inline-block;
-  width: -0.1em;
+  width: 0.22em;
 }}
 
 .cover-version {{
@@ -5509,6 +5509,30 @@ hr {{
 
         return "\n".join(lines)
 
+def strip_duplicate_article_heading(content: str, title: str) -> str:
+    title_plain = re.sub(r"\s+", " ", html.unescape(title)).strip().lower()
+
+    def clean_text(s: str) -> str:
+        s = re.sub(r"<[^>]+>", " ", s)
+        s = html.unescape(s)
+        return re.sub(r"\s+", " ", s).strip().lower()
+
+    pattern = re.compile(
+        r"""^\s*
+        <h[1-3]\b[^>]*>.*?</h[1-3]>
+        """,
+        flags=re.I | re.S | re.X,
+    )
+
+    m = pattern.match(content)
+    if not m:
+        return content
+
+    if clean_text(m.group(0)) == title_plain:
+        return content[m.end():].lstrip()
+
+    return content
+
     current_section = None
     part_num = 0
     article_num = 0
@@ -5567,7 +5591,7 @@ hr {{
 <div class="section-label">{html.escape(section)}</div>
 <h1 class="article-title">{html.escape(info["title"])}</h1>
 <div class="article-body">
-{info["content"]}
+{strip_duplicate_article_heading(info["content"], info["title"])}
 
 <div class="article-github-qr">
   <div class="article-github-qr-title">Source article on GitHub</div>
