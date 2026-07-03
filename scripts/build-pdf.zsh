@@ -4118,13 +4118,13 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0.72in;
   margin-left: 0.5in;
 
-  @top-left {{ content: element(bookHeader); width: 2.1in; }}
-  @top-center {{ content: element(sectionLink); }}
-  @top-right {{ content: ""; }}
+  @top-left      {{ content: ""; }}
+  @top-center    {{ content: ""; }}
+  @top-right     {{ content: ""; }}
 
-  @bottom-left {{ content: ""; }}
+  @bottom-left   {{ content: ""; }}
   @bottom-center {{ content: ""; }}
-  @bottom-right {{ content: ""; }}
+  @bottom-right  {{ content: ""; }}
 }}
 
 @page articlepage:left {{
@@ -4152,7 +4152,7 @@ h1, h2, h3, h4, h5, h6,
   margin-left: 0.4in;
 
   @top-left {{ content: ""; }}
-  @top-right {{ content: element(bookHeader); width: 2.1in; }}
+  @top-right {{ content: element(bookHeader); width: 2.1in; text-align: right; }}
 
   @bottom-left {{
     content: counter(page);
@@ -5323,8 +5323,10 @@ a {{
 
 .article-body a[href^="http://"],
 .article-body a[href^="https://"] {{
-  color: #7a1f1f;
-  background: #fff1f1;
+  color: #460d0d;
+  background: #ffeefc;
+  padding: 0 0.8pt;
+  border-radius: 0.8pt;
 }}
 
 .article-body a[href^="#"] {{
