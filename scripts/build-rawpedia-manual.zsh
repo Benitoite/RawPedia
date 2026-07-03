@@ -5216,42 +5216,47 @@ hr {{
 <body>
 """)
 
-# Build random RawTherapee button/icon border for cover.
-import os
-import random
-from pathlib import Path
+with OUTPUT_HTML.open("w", encoding="utf-8") as out:
+    out.write("""<!doctype html>
+...
+""")
 
-rt_git_path = Path(
-    Path.home() / "repo-rt" 
-    or os.environ.get("RT_GIT")
-    or os.environ.get("RT_GIT_DIR")
-).expanduser().resolve()
+    # Build random RawTherapee button/icon border for cover.
+    import os
+    import random
+    from pathlib import Path
 
-button_root = rt_git_path / "rtdata" / "images"
+    rt_git_path = Path(
+        Path.home() / "repo-rt"
+        or os.environ.get("RT_GIT")
+        or os.environ.get("RT_GIT_DIR")
+    ).expanduser().resolve()
 
-if button_root.exists():
-    button_candidates = sorted(
-        p for p in button_root.rglob("*")
-        if p.suffix.lower() in {".svg", ".png"}
-        and p.name.lower() not in {
-            "rawtherapee.svg",
-            "rawtherapee.png",
-            "rawtherapee.ico",
-        }
+    button_root = rt_git_path / "rtdata" / "images"
+
+    if button_root.exists():
+        button_candidates = sorted(
+            p for p in button_root.rglob("*")
+            if p.suffix.lower() in {".svg", ".png"}
+            and p.name.lower() not in {
+                "rawtherapee.svg",
+                "rawtherapee.png",
+                "rawtherapee.ico",
+            }
+        )
+    else:
+        button_candidates = []
+
+    random.seed(RT_GIT_VERSION + RAWPEDIA_GIT_VERSION)
+
+    cover_buttons = random.sample(button_candidates, min(28, len(button_candidates)))
+
+    cover_button_html = "\n".join(
+        f'<img src="{html.escape(p.resolve().as_uri(), quote=True)}" alt="">'
+        for p in cover_buttons
     )
-else:
-    button_candidates = []
 
-random.seed(RT_GIT_VERSION + RAWPEDIA_GIT_VERSION)
-
-cover_buttons = random.sample(button_candidates, min(28, len(button_candidates)))
-
-cover_button_html = "\n".join(
-    f'<img src="{html.escape(p.resolve().as_uri(), quote=True)}" alt="">'
-    for p in cover_buttons
-)
-
-out.write(f"""
+    out.write(f"""
 <section class="cover">
 <div class="cover-button-border">
 {cover_button_html}
