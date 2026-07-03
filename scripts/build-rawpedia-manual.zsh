@@ -41,6 +41,8 @@ fi
 
 mkdir -p "$WORK_DIR"
 
+echo "Getting the GPLv3 Logo SVG from Wikimedia Commons"
+
 if [[ ! -s "$GPLV3_LOGO_SVG" ]]; then
   curl -L "$GPLV3_LOGO_URL" -o "$GPLV3_LOGO_SVG"
 fi
@@ -4513,13 +4515,52 @@ body {{
   margin: 0 0 0.22in 0;
 }}
 
+.cover-title-front {{
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 36pt;
+  line-height: 1.02;
+  font-weight: bold;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-align: center;
+  color: #000000;
+}}
+
+.rainbow-title {{
+  white-space: nowrap;
+}}
+
+.rainbow-letter {{
+  position: relative;
+  display: inline-block;
+}}
+
+.rainbow-letter-glow {{
+  position: absolute;
+  left: 1.15pt;
+  top: 1.15pt;
+  color: var(--glow);
+  z-index: 0;
+}}
+
+.rainbow-letter-front {{
+  position: relative;
+  color: #000000;
+  z-index: 1;
+}}
+
+.rainbow-title-space {{
+  display: inline-block;
+  width: 0.22em;
+}}
+
 .cover-version {{
   font-family: Menlo, Consolas, "Courier New", monospace;
   font-size: 13pt;
   font-weight: bold;
   color: #000000;
   text-align: center;
-  margin: 0 0 0.22in 0;
+  margin: -0.5in 0 0.22in 0;
 }}
 
 .cover-date-stack {{
@@ -4618,7 +4659,8 @@ body {{
   font-size: 13pt;
   font-weight: bold;
   text-align: center;
-}}
+  letter-spacing: 1pt;
+  }}
 
 .subtitle-back {{
   color: #555555;
@@ -4642,6 +4684,7 @@ body {{
   text-align: center;
   margin: 0.08in auto 0 auto;
   padding: 0.07in 0.12in;
+  letter-spacing: 2pt;
 }}
 
 .half-title-git-version {{
@@ -5249,7 +5292,34 @@ hr {{
 <body>
 """)
 
+    def rainbow_title_html(text: str) -> str:
+        colors = [
+            "#ff0000", "#ff4000", "#ff8000", "#ffbf00", "#ffff00",
+            "#bfff00", "#80ff00", "#40ff00", "#00ff00",
+            "#00ff80", "#00ffff", "#0080ff", "#0000ff",
+            "#4000ff", "#8000ff", "#bf00ff", "#ff00ff",
+        ]
 
+        out = []
+
+        for i, ch in enumerate(text):
+            if ch == " ":
+                out.append('<span class="rainbow-title-space"> </span>')
+                continue
+
+            color = colors[i % len(colors)]
+            safe = html.escape(ch)
+
+            out.append(
+                f'<span class="rainbow-letter" style="--glow:{color}">'
+                f'<span class="rainbow-letter-glow">{safe}</span>'
+                f'<span class="rainbow-letter-front">{safe}</span>'
+                f'</span>'
+            )
+
+        return "".join(out)
+
+    COVER_TITLE_HTML = rainbow_title_html("RawTherapee Manual")
 
     out.write(f"""
 <section class="cover">
@@ -5259,10 +5329,7 @@ hr {{
   </a>
 </div>
 <div class="cover-title-stack" aria-label="RawTherapee Manual">
-  <div class="cover-title-layer cover-title-back-3">RawTherapee Manual</div>
-  <div class="cover-title-layer cover-title-back-2">RawTherapee Manual</div>
-  <div class="cover-title-layer cover-title-back-1">RawTherapee Manual</div>
-  <h1 class="cover-title-front">RawTherapee Manual</h1>
+  <h1 class="cover-title-front rainbow-title">{COVER_TITLE_HTML}</h1>
 </div>
 <div class="cover-version">{html.escape(RT_VERSION_DISPLAY)}</div>
 <div class="cover-date-stack" aria-label="{html.escape(BUILD_DATE)}">
@@ -5350,33 +5417,33 @@ hr {{
 <p class="preface-blurb">This manual is formatted as a standard 8 × 10 inch trade paperback with bleed, using an 8.125&quot; × 10.25&quot; PDF page size.</p>
 </section>
 """)
+
     out.write("""
 <section class="toc-section-wrapper" id="contents">
 <h1>Contents</h1>
 <div class="toc">
 """)
 
-    current_section = None
+current_section = None
 
-    for info in infos:
-        section = info["section"]
-        section_id = info["section_id"]
+for info in infos:
+    section = info["section"]
+    section_id = info["section_id"]
 
-        if section != current_section:
-            if current_section is not None:
-                out.write("</div>\n")
-            out.write('<div class="toc-part">\n')
-            out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
-            current_section = section
+    if section != current_section:
+        if current_section is not None:
+            out.write("</div>\n")
+        out.write('<div class="toc-part">\n')
+        out.write(f'<h2 id="{html.escape(section_id)}">{html.escape(section)}</h2>\n')
+        current_section = section
 
-        out.write(
-            f'<a href="#page-{html.escape(info["id"])}">'
-            f'{html.escape(info["title"])}</a>\n'
-        )
+    out.write(
+        f'<a href="#page-{html.escape(info["id"])}">'
+        f'{html.escape(info["title"])}</a>\n'
+    )
 
-    if current_section is not None:
-        out.write("</div>\n")
-
+if current_section is not None:
+    out.write("</div>\n")
     out.write("""
 <div class="toc-part">
 <h2>Back Matter</h2>
@@ -5386,47 +5453,47 @@ hr {{
 </section>
 """)
 
-    section_infos = defaultdict(list)
+section_infos = defaultdict(list)
 
-    for section_info in infos:
-        section_infos[section_info["section"]].append(section_info)
+for section_info in infos:
+    section_infos[section_info["section"]].append(section_info)
 
-    def build_part_subtoc(section: str) -> str:
-        refs = section_infos.get(section, [])
+def build_part_subtoc(section: str) -> str:
+    refs = section_infos.get(section, [])
 
-        if not refs:
-            return ""
+    if not refs:
+        return ""
 
-        lines = []
-        lines.append('<div class="part-subtoc">')
-        lines.append('<div class="part-subtoc-title">In this section</div>')
-        lines.append('<div class="part-subtoc-body">')
+    lines = []
+    lines.append('<div class="part-subtoc">')
+    lines.append('<div class="part-subtoc-title">In this section</div>')
+    lines.append('<div class="part-subtoc-body">')
 
-        for ref in refs:
-            lines.append(
-                f'<a href="#page-{html.escape(ref["id"])}">'
-                f'{html.escape(ref["title"])}</a>'
-            )
+    for ref in refs:
+        lines.append(
+            f'<a href="#page-{html.escape(ref["id"])}">'
+            f'{html.escape(ref["title"])}</a>'
+        )
 
-        lines.append('</div>')
-        lines.append('</div>')
+    lines.append('</div>')
+    lines.append('</div>')
 
-        return "\n".join(lines)
+    return "\n".join(lines)
 
-    current_section = None
-    part_num = 0
-    article_num = 0
+current_section = None
+part_num = 0
+article_num = 0
 
-    for info in infos:
-        section = info["section"]
-        section_id = info["section_id"]
+for info in infos:
+    section = info["section"]
+    section_id = info["section_id"]
 
-        if section != current_section:
-            current_section = section
-            part_num += 1
-            part_subtoc = build_part_subtoc(section)
+    if section != current_section:
+        current_section = section
+        part_num += 1
+        part_subtoc = build_part_subtoc(section)
 
-            out.write(f"""
+        out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
@@ -5442,28 +5509,28 @@ hr {{
 </div>
 </section>
 """)
-        else:
-            out.write(f"""
+else:
+    out.write(f"""
 <div class="running-section-link">
   <a href="#{html.escape(section_id)}">{html.escape(section)}</a>
 </div>
 """)
 
-        print(f"  ➜ [{section}] {info['title']}")
+    print(f"  ➜ [{section}] {info['title']}")
 
-        article_num += 1
-        article_classes = ["article"]
+    article_num += 1
+    article_classes = ["article"]
 
-        if article_num == 1:
-            article_classes.append("first-article")
-        elif article_is_major(info["content"], info["title"]):
-            article_classes.append("major-article")
-        else:
-            article_classes.append("short-article")
+    if article_num == 1:
+        article_classes.append("first-article")
+    elif article_is_major(info["content"], info["title"]):
+        article_classes.append("major-article")
+    else:
+        article_classes.append("short-article")
 
-        article_class = " ".join(article_classes)
+    article_class = " ".join(article_classes)
 
-        out.write(f"""
+    out.write(f"""
 <div class="running-article-footer">
   <a href="#page-{html.escape(info["id"])}">{html.escape(info["title"])}</a>
 </div>
