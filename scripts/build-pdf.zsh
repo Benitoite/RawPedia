@@ -4313,13 +4313,11 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
   font-style: normal;
 }}
 
-body {
-
+body {{
   font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
-
   font-weight: 700;
+}}
 
-}
 h1, h2, h3, h4, h5, h6,
 .cover-title-front,
 .rainbow-title,
@@ -5013,9 +5011,7 @@ body {{
   width: 100%;
   font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
   font-weight: 700;
-  font-size: 13pt;
-  font-weight: bold;
-  text-align: center;
+  font-size: 13pt;  text-align: center;
   letter-spacing: 1pt;
   }}
 
