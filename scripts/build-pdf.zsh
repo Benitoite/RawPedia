@@ -4309,7 +4309,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 @font-face {{
   font-family: "FrutigerLocal";
   src: url("Frutiger-Bold.otf") format("opentype");
-  font-weight: 700;
+  font-weight: 900;
   font-style: normal;
 }}
 
@@ -4675,7 +4675,7 @@ h1, h2, h3, h4, h5, h6,
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 8pt;
+  font-size: 8.4pt;
   line-height: 1.13;
   color: #000;
 }}
