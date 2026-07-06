@@ -4496,6 +4496,7 @@ h1, h2, h3, h4, h5, h6,
   height: 1in;
   object-fit: contain;
   background: transparent;
+  break-before: page;
 }}
 
 .final-blank-before-icon {{
@@ -4615,7 +4616,7 @@ h1, h2, h3, h4, h5, h6,
 @page intentionalblank {{
   size: 8.125in 10.25in;
   margin: 0;
-
+  break-before: page;
   @top-left {{ content: ""; }}
   @top-center {{ content: ""; }}
   @top-right {{ content: ""; }}
