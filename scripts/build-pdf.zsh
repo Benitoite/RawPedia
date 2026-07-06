@@ -4314,8 +4314,7 @@ with OUTPUT_HTML.open("w", encoding="utf-8") as out:
 }}
 
 body {{
-  font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
-  font-weight: 700;
+  font-family: Georgia;
 }}
 
 h1, h2, h3, h4, h5, h6,
@@ -5265,9 +5264,8 @@ body {{
 
 .part-subtoc-title {{
   text-align: center;
-  font-weight: bold;
+  font-weight: normal;
   font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
-  font-weight: 150;
   font-size: 8.2pt;
   text-transform: uppercase;
   letter-spacing: 0.045em;
@@ -5424,8 +5422,7 @@ body {{
   background: #f7f7f7;
   padding: 0.08in 0.1in;
   margin: 0 0 0.16in 0;
-  font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
-  font-weight: 700;
+  font-family: Helvetica, Arial, sans-serif;
   font-size: 7.8pt;
   line-height: 1.22;
 }}
