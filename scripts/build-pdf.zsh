@@ -4829,7 +4829,7 @@ body {{
   margin: 0;
   padding: 0.95in;
   position: relative;
-  }}
+}}
 
 .cover-gpl-main {{
   font-size: 13pt;
