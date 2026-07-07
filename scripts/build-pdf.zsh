@@ -4512,7 +4512,7 @@ h1, h2, h3, h4, h5, h6,
     content: "RawTherapee Manual";
     font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
     font-weight: 700;
-    font-size: 8.5pt
+    font-size: 8.5pt;
     color: #765;
   }}
   @top-left {{ content: ""; }}
