@@ -5823,7 +5823,7 @@ hr {{
   content: ", ";
 }}
 
-.publisher-final-page {
+.publisher-final-page {{
   page: body;
   break-before: page;
   break-after: page;
@@ -5832,12 +5832,12 @@ hr {{
 
   min-height: 10.5in; /* letter page minus margins; adjust if needed */
   box-sizing: border-box;
-}
+}}
 
-.publisher-final-page:last-child {
+.publisher-final-page:last-child {{
   break-after: auto;
   page-break-after: auto;
-}
+}}
 
 </style>
 </head>
