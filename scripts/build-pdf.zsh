@@ -4512,7 +4512,7 @@ h1, h2, h3, h4, h5, h6,
     content: "RawTherapee Manual";
     font-family: "FrutigerLocal", Helvetica, Arial, sans-serif;
     font-weight: 700;
-    font-size: 8.5pt;
+    font-size: 8.5pt
     color: #765;
   }}
   @top-left {{ content: ""; }}
@@ -5823,6 +5823,22 @@ hr {{
   content: ", ";
 }}
 
+.publisher-final-page {
+  page: body;
+  break-before: page;
+  break-after: page;
+  page-break-before: always;
+  page-break-after: always;
+
+  min-height: 10.5in; /* letter page minus margins; adjust if needed */
+  box-sizing: border-box;
+}
+
+.publisher-final-page:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
 </style>
 </head>
 <body>
@@ -6129,6 +6145,7 @@ hr {{
             href = f"#page-{ref['id']}"
 
             if href in seen_refs:
+
                 continue
 
             seen_refs.add(href)
@@ -8521,48 +8538,6 @@ if ! command -v qpdf >/dev/null 2>&1; then
   exit 1
 fi
 
-PAGE_COUNT="$(qpdf --show-npages "$OUTPUT_PDF")"
-
-FRONT_COVER_PAGE_COUNT=1
-BACK_COVER_PAGE_COUNT=1
-FINAL_PAGE_COUNT=2
-
-INSIDE_BEFORE_FINAL=$(( PAGE_COUNT - FRONT_COVER_PAGE_COUNT ))
-FINAL_INSIDE_PAGE_COUNT=$(( FINAL_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
-
-REMAINDER=$(( (INSIDE_BEFORE_FINAL + FINAL_INSIDE_PAGE_COUNT) % 4 ))
-
-if (( REMAINDER == 0 )); then
-  PAD_NEEDED=0
-else
-  PAD_NEEDED=$(( 4 - REMAINDER ))
-fi
-
-EXPECTED_FINAL_TOTAL=$(( PAGE_COUNT + PAD_NEEDED + FINAL_PAGE_COUNT ))
-EXPECTED_FINAL_INSIDE=$(( EXPECTED_FINAL_TOTAL - FRONT_COVER_PAGE_COUNT - BACK_COVER_PAGE_COUNT ))
-
-echo "📄 Original page count: $PAGE_COUNT"
-echo "📄 Padding blankies needed inside: $PAD_NEEDED"
-echo "📄 Expected final page count: $EXPECTED_FINAL_TOTAL"
-echo "📄 Expected final inside page count: $EXPECTED_FINAL_INSIDE"
-
-echo "📄 Injecting final publisher pages into main HTML..."
-
-python3 - "$OUTPUT_HTML" "$PAD_NEEDED" "$RT_HEADER_PNG" <<'INJECT_FINAL_PAGES'
-import sys
-from pathlib import Path
-
-html_path = Path(sys.argv[1])
-pad_needed = int(sys.argv[2])
-icon_uri = Path(sys.argv[3]).resolve().as_uri()
-
-s = html_path.read_text(encoding="utf-8", errors="replace")
-
-marker = '<!-- RAWPEDIA_FINAL_PUBLISHER_PAGES -->'
-
-# Remove old injected final pages if this script is re-run.
-if marker in s:
-    s = s.split(marker, 1)[0].rstrip() + "\n</body>\n</html>\n"
 
 sections = []
 sections.append(marker)
@@ -8690,6 +8665,61 @@ if "publisher-final-pages-style" not in s:
     html_path.write_text(s, encoding="utf-8")
     print(f"Injected {pad_needed} padding page(s) plus 2 final logo pages")
 INJECT_FINAL_PAGES
+
+echo "📄 Rendering final PDF in one WeasyPrint pass so internal links survive..."
+
+sanitize_hrefs_for_weasyprint "$OUTPUT_HTML"
+
+BOOK_BASE_URL="$(
+python3 - "$OUTPUT_HTML" <<'PY'
+import sys
+from pathlib import Path
+print(Path(sys.argv[1]).resolve().parent.as_uri() + "/")
+PY
+)"
+
+echo "PDF base URL: $BOOK_BASE_URL"
+
+weasyprint \
+  --base-url "$BOOK_BASE_URL" \
+  --verbose \
+  "$OUTPUT_HTML" \
+  "$OUTPUT_PDF"
+  
+FINAL_PAGE_TOTAL="$(qpdf --show-npages "$OUTPUT_PDF")"
+
+echo
+echo "🔗 Checking final PDF for bad file:/// link annotations..."
+
+python3 - "$OUTPUT_PDF" <<'CHECK_FINAL_PDF_FILE_LINKS'
+import sys
+import subprocess
+import re
+from pathlib import Path
+
+pdf = Path(sys.argv[1])
+
+try:
+    result = subprocess.run(
+        [
+            "qpdf",
+            "--qdf",
+            "--object-streams=disable",
+            str(pdf),
+            "-",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+except FileNotFoundError:
+    print("⚠️ qpdf not found; skipping final PDF file-link check.")
+    sys.exit(0)
+except subprocess.CalledProcessError as e:
+    print("⚠️ qpdf could not inspect final PDF links; skipping.")
+    print(e.stderr.decode("utf-8", errors="replace")[:1000])
+    sys.exit(0)
+
 
 echo "📄 Rendering final PDF in one WeasyPrint pass so internal links survive..."
 
