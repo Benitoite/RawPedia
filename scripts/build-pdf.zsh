@@ -1,8 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 
-SOURCE_DIR="$HOME/RawPedia/Public"
-CONTENTS_DIR="$HOME/RawPedia/content"
+RAWPEDIA_ROOT="$HOME/RawPedia"
+PUBLIC_DIR="$RAWPEDIA_ROOT/Public"
+CONTENTS_DIR="$RAWPEDIA_ROOT/content"
 WORK_DIR="rawtherapee-manual"
 OUTPUT_HTML="$WORK_DIR/book.html"
 OUTPUT_PDF="rawtherapee_manual.pdf"
@@ -48,8 +49,8 @@ if ! command -v weasyprint &> /dev/null; then
   exit 1
 fi
 
-if [ ! -d "$SOURCE_DIR" ]; then
-  print_step "❌ SOURCE_DIR not found: $SOURCE_DIR"
+if [ ! -d "$RAWPEDIA_ROOT" ]; then
+  print_step "❌ RAWPEDIA_ROOT not found: $RAWPEDIA_ROOT"
   exit 1
 fi
 
@@ -80,7 +81,7 @@ Path(sys.argv[1]).write_text(html, encoding="utf-8")
 SANITIZE_HREF
 }
 
-cd "$SOURCE_DIR"
+cd "$RAWPEDIA_ROOT"
 
 print_step "🔄 Running Hugo..."
 
