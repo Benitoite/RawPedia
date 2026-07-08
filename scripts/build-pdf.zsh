@@ -387,6 +387,17 @@ def content_file_redirect_target_quick(path: Path) -> str:
 def content_file_is_redirect_quick(path: Path) -> bool:
     return bool(content_file_redirect_target_quick(path))
 
+def content_lookup_key(key: str) -> str:
+    key = html.unescape(key or "").strip()
+    key = urllib.parse.unquote(key)
+    key = key.replace("\\", "/").lower()
+    key = re.sub(r"/index\.html?$", "", key, flags=re.I)
+    key = re.sub(r"\.html?$", "", key, flags=re.I)
+    key = re.sub(r"\.(md|markdown)$", "", key, flags=re.I)
+    key = key.strip("/")
+    key = re.sub(r"\s+", " ", key)
+    return key
+
 def build_content_file_index() -> Dict:
     """
     Build route/alias/url/title lookup -> actual CONTENTS_DIR file path.
@@ -788,17 +799,6 @@ def read_authors_file() -> List[str]:
 
     return names
 
-def content_lookup_key(key: str) -> str:
-    key = html.unescape(key or "").strip()
-    key = urllib.parse.unquote(key)
-    key = key.replace("\\", "/").lower()
-    key = re.sub(r"/index\.html?$", "", key, flags=re.I)
-    key = re.sub(r"\.html?$", "", key, flags=re.I)
-    key = re.sub(r"\.(md|markdown)$", "", key, flags=re.I)
-    key = key.strip("/")
-    key = re.sub(r"\s+", " ", key)
-    return key
-
 def extract_title_from_html_file(path: Path) -> str:
     text = read_text(path)
 
@@ -861,7 +861,7 @@ def page_is_probably_english_language(title: str, text: str) -> bool:
         "translation", "traduza", "traduzione", "übersetzung", "traduction", "profundidad", "contribuir", "compilando", "descàrrega", "baixar",
     ]
 
-    if any(word in title_lower for word in translated_title_words):
+    if any(word in title_key for word in translated_title_words):
         return False
 
     sample = html.unescape(re.sub(r"<[^>]+>", " ", text[:16000])).lower()
