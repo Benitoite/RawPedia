@@ -27,9 +27,9 @@ BOOK_BASE_URL="https://rawpedia.pixls.us"
 
 print_step() {
   echo
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "$1"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
 print_step "📖 Building RawTherapee PDF manual..."
@@ -376,6 +376,40 @@ def extract_frontmatter_list_field(fm: str, field: str) -> List[str]:
 
     return out
 
+def extract_hugo_frontmatter(text: str) -> str:
+    if not text.startswith("---"):
+        return ""
+
+    rest = text[3:]
+    match = re.search(r"^---\s*$", rest, flags=re.M)
+
+    if not match:
+        return ""
+
+    return rest[:match.start()]
+
+def extract_redirect_target_from_source_text(text: str) -> str:
+    """
+    Extract the redirect target from Hugo aliases or redirectFrom.
+    """
+    fm = extract_hugo_frontmatter(text)
+
+    # Check for 'redirectTo' or 'redirect' fields
+    redirect_to = extract_frontmatter_string_field(fm, "redirectTo")
+    if redirect_to:
+        return redirect_to
+
+    redirect_field = extract_frontmatter_string_field(fm, "redirect")
+    if redirect_field:
+        return redirect_field
+
+    # Check for HTML meta refresh
+    m = re.search(r'<meta\s+http-equiv=["\']refresh["\'][^>]*content=["\']([^;]*)', text, flags=re.I | re.S)
+    if m:
+        return m.group(1).strip()
+
+    return ""
+
 def content_file_redirect_target_quick(path: Path) -> str:
     try:
         text = read_text(path)
@@ -463,18 +497,6 @@ def build_content_file_index() -> Dict:
 
 content_file_index = build_content_file_index()
 
-def extract_hugo_frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return ""
-
-    rest = text[3:]
-    match = re.search(r"^---\s*$", rest, flags=re.M)
-
-    if not match:
-        return ""
-
-    return rest[:match.start()]
-
 def extract_aliases_from_content_file(path: Optional[Path]) -> List[str]:
     if not path or not path.exists():
         return []
@@ -530,28 +552,6 @@ def extract_aliases_from_content_file(path: Optional[Path]) -> List[str]:
         break
 
     return aliases
-
-def extract_redirect_target_from_source_text(text: str) -> str:
-    """
-    Extract the redirect target from Hugo aliases or redirectFrom.
-    """
-    fm = extract_hugo_frontmatter(text)
-
-    # Check for 'redirectTo' or 'redirect' fields
-    redirect_to = extract_frontmatter_string_field(fm, "redirectTo")
-    if redirect_to:
-        return redirect_to
-
-    redirect_field = extract_frontmatter_string_field(fm, "redirect")
-    if redirect_field:
-        return redirect_field
-
-    # Check for HTML meta refresh
-    m = re.search(r'<meta\s+http-equiv=["\']refresh["\'][^>]*content=["\']([^;]*)', text, flags=re.I | re.S)
-    if m:
-        return m.group(1).strip()
-
-    return ""
 
 def extract_contributors_from_hugo_frontmatter(text: str) -> Set[str]:
     contributors = set()
