@@ -3083,6 +3083,15 @@ def prefix_ids_and_anchors(s: str, prefix: str) -> str:
         frag = m.group(2) if quote else m.group(3)
         frag = html.unescape(frag)
 
+        # Hugo uses #ZgotmplZ for URLs rejected by its safety filter.
+        # clean_links() reduces that sentinel to an empty "#" fragment.
+        # Do not turn it into a fake article destination such as
+        # #dark-frame- or #flat-field-.
+        if not frag or frag == "ZgotmplZ":
+            if quote:
+                return f'href={quote}#{quote}'
+            return 'href="#"'
+
         if frag.startswith(prefix + "-"):
             return m.group(0)
 
@@ -9052,3 +9061,12 @@ if (( FINAL_INSIDE_COUNT % 4 != 0 )); then
   echo "   back cover:    $BACK_COVER_PAGE_COUNT"
   echo "   inside pages:  $FINAL_INSIDE_COUNT"
   exit 1
+fi
+
+echo "Final PDF includes front cover + inside signatures + back cover."
+echo "Final inside page count is divisible by 4."
+
+if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
+  echo "⚠️ Some images were still missing."
+  echo "   See: $WORK_DIR/missing-images.txt"
+fi
