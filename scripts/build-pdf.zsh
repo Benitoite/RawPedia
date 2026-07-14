@@ -4734,7 +4734,7 @@ h1, h2, h3, h4, h5, h6,
 
 html, body {{
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 8.2pt;
+  font-size: 8.9pt;
   line-height: 1.13;
   color: #000;
 }}
