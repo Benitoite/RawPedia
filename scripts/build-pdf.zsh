@@ -3036,29 +3036,69 @@ def rewrite_images(s: str, page_path: Path, page_title: str, page_rel: str) -> s
         flags=re.I | re.S,
     )
 
+HTML_UNQUOTED_ATTR_VALUE = r'''[^\s"'=<>`]+'''
+
+def html_attribute_value(attrs: str, name: str) -> str | None:
+    """Return a quoted or unquoted HTML attribute value."""
+    m = re.search(
+        rf'''(?<![\w:-]){re.escape(name)}\s*=\s*(?:(["'])(.*?)\1|({HTML_UNQUOTED_ATTR_VALUE}))''',
+        attrs,
+        flags=re.I | re.S,
+    )
+
+    if not m:
+        return None
+
+    value = m.group(2) if m.group(1) else m.group(3)
+    return html.unescape(value)
+
 def prefix_ids_and_anchors(s: str, prefix: str) -> str:
     def id_repl(m):
         attr = m.group(1)
         quote = m.group(2)
-        value = m.group(3)
+        value = m.group(3) if quote else m.group(4)
+        value = html.unescape(value)
 
         if value.startswith(prefix + "-"):
             return m.group(0)
 
-        return f'{attr}={quote}{prefix}-{value}{quote}'
+        value = html.escape(f"{prefix}-{value}", quote=True)
 
-    s = re.sub(r'\b(id|name)=(["\'])([^"\']+)\2', id_repl, s, flags=re.I)
+        if quote:
+            return f'{attr}={quote}{value}{quote}'
+
+        # Normalize Hugo --minify output to quoted HTML while adding the
+        # article prefix.
+        return f'{attr}="{value}"'
+
+    s = re.sub(
+        rf'''(?<![\w:-])(id|name)\s*=\s*(?:(["'])(.*?)\2|({HTML_UNQUOTED_ATTR_VALUE}))''',
+        id_repl,
+        s,
+        flags=re.I | re.S,
+    )
 
     def href_repl(m):
         quote = m.group(1)
-        frag = m.group(2)
+        frag = m.group(2) if quote else m.group(3)
+        frag = html.unescape(frag)
 
         if frag.startswith(prefix + "-"):
             return m.group(0)
 
-        return f'href={quote}#{prefix}-{frag}{quote}'
+        frag = html.escape(f"#{prefix}-{frag}", quote=True)
 
-    s = re.sub(r'href=(["\"])#([^"\']+)\1', href_repl, s, flags=re.I)
+        if quote:
+            return f'href={quote}{frag}{quote}'
+
+        return f'href="{frag}"'
+
+    s = re.sub(
+        rf'''(?<![\w:-])href\s*=\s*(?:(["'])#(.*?)\1|#({HTML_UNQUOTED_ATTR_VALUE}))''',
+        href_repl,
+        s,
+        flags=re.I | re.S,
+    )
 
     return s
     
@@ -3422,7 +3462,7 @@ def normalize_internal_href_fragments(content: str) -> str:
         flags=re.I | re.S,
     )    
     
-def build_article_toc(content: str, page_id: str) -> str:
+def extract_article_toc_headings(content: str):
     headings = []
 
     for m in re.finditer(
@@ -3438,18 +3478,21 @@ def build_article_toc(content: str, page_id: str) -> str:
         if not text:
             continue
 
-        id_match = re.search(r'\bid=(["\'])(.*?)\1', attrs, flags=re.I | re.S)
+        heading_id = html_attribute_value(attrs, "id")
 
-        if not id_match:
+        if not heading_id:
             continue
-
-        heading_id = id_match.group(2)
 
         headings.append({
             "level": level,
             "text": text,
             "href": "#" + heading_id,
         })
+
+    return headings
+
+def build_article_toc(content: str, page_id: str) -> str:
+    headings = extract_article_toc_headings(content)
 
     # Keep a per-article TOC whenever the article has at least one real
     # section heading.  The old three-heading threshold silently removed the
@@ -4136,11 +4179,7 @@ infos.sort(key=page_sort_key)
 missing_article_tocs = []
 
 for info in infos:
-    has_toc_heading = bool(re.search(
-        r'<h[2-4]\b[^>]*\bid=(["\']).*?\1',
-        info["content"],
-        flags=re.I | re.S,
-    ))
+    has_toc_heading = bool(extract_article_toc_headings(info["content"]))
 
     if has_toc_heading and not info.get("has_article_toc", False):
         missing_article_tocs.append((info["title"], info["rel"]))
@@ -4152,7 +4191,24 @@ if missing_article_tocs:
         print(f"   {title} [{rel}]")
     sys.exit(1)
 
-print(f"Per-article TOCs generated: {sum(1 for info in infos if info.get('has_article_toc'))}")
+raw_heading_article_count = sum(
+    1
+    for info in infos
+    if re.search(r'<h[2-4]\b', info["content"], flags=re.I)
+)
+article_toc_count = sum(1 for info in infos if info.get("has_article_toc"))
+
+# Keep this independent aggregate guard deliberately broader than the TOC
+# extractor. It catches a future parser regression where headings exist but
+# every TOC disappears, as happened with Hugo --minify unquoted attributes.
+if raw_heading_article_count and not article_toc_count:
+    print()
+    print("❌ Articles contain h2-h4 headings, but no per-article TOCs were generated.")
+    print(f"   Articles with raw section headings: {raw_heading_article_count}")
+    sys.exit(1)
+
+print(f"Per-article TOCs generated: {article_toc_count}")
+print(f"Articles with raw h2-h4 headings: {raw_heading_article_count}")
 
 required_route_needles = {
     "chromatic-aberration",
