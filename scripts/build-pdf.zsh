@@ -3071,8 +3071,11 @@ def prefix_ids_and_anchors(s: str, prefix: str) -> str:
         # article prefix.
         return f'{attr}="{value}"'
 
+    # Real HTML attributes are whitespace-delimited inside their start tag.
+    # Requiring that delimiter prevents URL query parameters such as ?id=1257
+    # and &amp;id=447640 from being mistaken for id attributes.
     s = re.sub(
-        rf'''(?<![\w:-])(id|name)\s*=\s*(?:(["'])(.*?)\2|({HTML_UNQUOTED_ATTR_VALUE}))''',
+        rf'''(?<=\s)(id|name)\s*=\s*(?:(["'])(.*?)\2|({HTML_UNQUOTED_ATTR_VALUE}))''',
         id_repl,
         s,
         flags=re.I | re.S,
@@ -3103,7 +3106,7 @@ def prefix_ids_and_anchors(s: str, prefix: str) -> str:
         return f'href="{frag}"'
 
     s = re.sub(
-        rf'''(?<![\w:-])href\s*=\s*(?:(["'])#(.*?)\1|#({HTML_UNQUOTED_ATTR_VALUE}))''',
+        rf'''(?<=\s)href\s*=\s*(?:(["'])#(.*?)\1|#({HTML_UNQUOTED_ATTR_VALUE}))''',
         href_repl,
         s,
         flags=re.I | re.S,
@@ -9067,6 +9070,3 @@ echo "Final PDF includes front cover + inside signatures + back cover."
 echo "Final inside page count is divisible by 4."
 
 if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
-  echo "⚠️ Some images were still missing."
-  echo "   See: $WORK_DIR/missing-images.txt"
-fi
