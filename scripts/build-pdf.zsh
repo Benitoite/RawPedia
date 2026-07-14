@@ -9070,3 +9070,6 @@ echo "Final PDF includes front cover + inside signatures + back cover."
 echo "Final inside page count is divisible by 4."
 
 if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
+  echo "⚠️ Some images were still missing."
+  echo "   See: $WORK_DIR/missing-images.txt"
+fi
