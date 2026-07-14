@@ -6424,35 +6424,13 @@ import re
 import sys
 import html
 import urllib.parse
+import unicodedata
+from bs4 import BeautifulSoup
 from pathlib import Path
 
-s = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-
-ids = set(
-    html.unescape(m.group(2)).strip()
-    for m in re.finditer(r'\b(?:id|name)=(["\'])(.*?)\1', s, flags=re.I | re.S)
-)
-
-hrefs = [
-    html.unescape(m.group(2)).strip()
-    for m in re.finditer(r'\bhref=(["\'])(.*?)\1', s, flags=re.I | re.S)
-]
-
-internal = [
-    h for h in hrefs
-    if h.startswith("#") and h not in {"#", "#ZgotmplZ"}
-]
-
-missing = []
-
-for h in internal:
-    target = urllib.parse.unquote(h[1:])
-
-    if target and target not in ids:
-        missing.append(h)
-        
-print(f"ids/name targets: {len(ids)}")
-print(f"internal hrefs: {len(internal)}")
+html_path = Path(sys.argv[1])
+s = html_path.read_text(encoding="utf-8", errors="replace")
+soup = BeautifulSoup(s, "html.parser")
 
 # ---------------------------------------------------------------------------
 # Restore aliases for internal heading fragments whose generated IDs were
@@ -6460,10 +6438,6 @@ print(f"internal hrefs: {len(internal)}")
 # Run this after all articles are in the final BeautifulSoup document and
 # before auditing internal link targets.
 # ---------------------------------------------------------------------------
-
-import re
-import unicodedata
-
 
 def rawpedia_fragment_slug(value: str) -> str:
     value = unicodedata.normalize("NFKD", value or "")
@@ -6490,22 +6464,24 @@ def restore_missing_heading_fragment_aliases(soup) -> int:
     referenced_fragments = set()
 
     for link in soup.find_all("a", href=True):
-        href = str(link.get("href") or "").strip()
+        href = html.unescape(str(link.get("href") or "")).strip()
 
-        if not href.startswith("#") or len(href) <= 1:
+        if not href.startswith("#") or href in {"#", "#ZgotmplZ"}:
             continue
 
-        fragment = href[1:]
+        fragment = urllib.parse.unquote(href[1:])
 
         # Ignore empty and obviously synthetic/non-heading destinations.
         if fragment:
             referenced_fragments.add(fragment)
 
-    existing_ids = {
-        str(tag.get("id"))
-        for tag in soup.find_all(attrs={"id": True})
-        if tag.get("id")
-    }
+    existing_ids = set()
+
+    for tag in soup.find_all(True):
+        for attr in ("id", "name"):
+            value = tag.get(attr)
+            if value:
+                existing_ids.add(html.unescape(str(value)).strip())
 
     missing_fragments = referenced_fragments - existing_ids
     if not missing_fragments:
@@ -6582,10 +6558,43 @@ def restore_missing_heading_fragment_aliases(soup) -> int:
 restored_heading_aliases = restore_missing_heading_fragment_aliases(soup)
 
 if restored_heading_aliases:
+    html_path.write_text(str(soup), encoding="utf-8")
     print(
         "✅ Restored internal heading fragment aliases:"
         f" {restored_heading_aliases}"
     )
+
+# Audit the final DOM after alias restoration. BeautifulSoup also handles
+# quoted and unquoted attributes from Hugo --minify consistently.
+ids = set()
+
+for tag in soup.find_all(True):
+    for attr in ("id", "name"):
+        value = tag.get(attr)
+        if value:
+            ids.add(html.unescape(str(value)).strip())
+
+hrefs = [
+    html.unescape(str(tag.get("href") or "")).strip()
+    for tag in soup.find_all(href=True)
+]
+
+internal = [
+    href
+    for href in hrefs
+    if href.startswith("#") and href not in {"#", "#ZgotmplZ"}
+]
+
+missing = []
+
+for href in internal:
+    target = urllib.parse.unquote(href[1:])
+
+    if target and target not in ids:
+        missing.append(href)
+
+print(f"ids/name targets: {len(ids)}")
+print(f"internal hrefs: {len(internal)}")
 
 print(f"missing internal targets: {len(missing)}")
 
@@ -9043,12 +9052,3 @@ if (( FINAL_INSIDE_COUNT % 4 != 0 )); then
   echo "   back cover:    $BACK_COVER_PAGE_COUNT"
   echo "   inside pages:  $FINAL_INSIDE_COUNT"
   exit 1
-fi
-
-echo "Final PDF includes front cover + inside signatures + back cover."
-echo "Final inside page count is divisible by 4."
-
-if [[ -f "$WORK_DIR/missing-images.txt" ]]; then
-  echo "⚠️ Some images were still missing."
-  echo "   See: $WORK_DIR/missing-images.txt"
-fi
