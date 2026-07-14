@@ -6453,6 +6453,140 @@ for h in internal:
         
 print(f"ids/name targets: {len(ids)}")
 print(f"internal hrefs: {len(internal)}")
+
+# ---------------------------------------------------------------------------
+# Restore aliases for internal heading fragments whose generated IDs were
+# prefixed or otherwise transformed while assembling the combined manual.
+# Run this after all articles are in the final BeautifulSoup document and
+# before auditing internal link targets.
+# ---------------------------------------------------------------------------
+
+import re
+import unicodedata
+
+
+def rawpedia_fragment_slug(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value or "")
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    value = value.casefold()
+
+    # Treat typographic punctuation the same as ordinary punctuation.
+    value = (
+        value
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("&", " and ")
+    )
+
+    # Match the normal heading-fragment form used by RawPedia/Hugo.
+    value = re.sub(r"['\"]", "", value)
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    return value.strip("-")
+
+
+def restore_missing_heading_fragment_aliases(soup) -> int:
+    referenced_fragments = set()
+
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href") or "").strip()
+
+        if not href.startswith("#") or len(href) <= 1:
+            continue
+
+        fragment = href[1:]
+
+        # Ignore empty and obviously synthetic/non-heading destinations.
+        if fragment:
+            referenced_fragments.add(fragment)
+
+    existing_ids = {
+        str(tag.get("id"))
+        for tag in soup.find_all(attrs={"id": True})
+        if tag.get("id")
+    }
+
+    missing_fragments = referenced_fragments - existing_ids
+    if not missing_fragments:
+        return 0
+
+    headings = soup.find_all(re.compile(r"^h[1-6]$"))
+
+    # Index headings by a slug made from their displayed text.
+    headings_by_text_slug = {}
+
+    for heading in headings:
+        heading_text = heading.get_text(" ", strip=True)
+        text_slug = rawpedia_fragment_slug(heading_text)
+
+        if text_slug:
+            headings_by_text_slug.setdefault(text_slug, []).append(heading)
+
+    restored = 0
+
+    for fragment in sorted(missing_fragments):
+        wanted_slug = rawpedia_fragment_slug(fragment)
+        candidates = list(headings_by_text_slug.get(wanted_slug, []))
+
+        # The combined manual may prefix IDs with an article identifier.
+        # Also accept an existing heading ID whose final component is the
+        # original RawPedia fragment.
+        if not candidates:
+            for heading in headings:
+                heading_id = str(heading.get("id") or "")
+                heading_id_slug = rawpedia_fragment_slug(heading_id)
+
+                if (
+                    heading_id_slug == wanted_slug
+                    or heading_id_slug.endswith("-" + wanted_slug)
+                ):
+                    candidates.append(heading)
+
+        # Do not guess when multiple headings have the same title. Those
+        # links need article-aware rewriting instead of a global alias.
+        unique_candidates = []
+        seen_objects = set()
+
+        for candidate in candidates:
+            object_key = id(candidate)
+            if object_key not in seen_objects:
+                seen_objects.add(object_key)
+                unique_candidates.append(candidate)
+
+        if len(unique_candidates) != 1:
+            continue
+
+        heading = unique_candidates[0]
+
+        alias = soup.new_tag("span")
+        alias["id"] = fragment
+        alias["class"] = ["rawpedia-fragment-alias"]
+        alias["aria-hidden"] = "true"
+
+        # A zero-size inline alias directly before the heading preserves the
+        # heading's page position without changing its visible formatting.
+        heading.insert_before(alias)
+
+        existing_ids.add(fragment)
+        restored += 1
+
+        print(
+            "🔗 Restored heading fragment alias:"
+            f" #{fragment} -> #{heading.get('id', '')}"
+        )
+
+    return restored
+
+
+restored_heading_aliases = restore_missing_heading_fragment_aliases(soup)
+
+if restored_heading_aliases:
+    print(
+        "✅ Restored internal heading fragment aliases:"
+        f" {restored_heading_aliases}"
+    )
+
 print(f"missing internal targets: {len(missing)}")
 
 if missing:
