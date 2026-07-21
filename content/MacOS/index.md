@@ -353,7 +353,3 @@ To use the [command line interface (CLI)](command-line_options/#rawtherapee-cli)
 app as above.
 
 </div>
-
-If the workspace is too small to read, you must change the [HiDPI
-settings](preferences/#appearance) in RawTherapee: Preferences \> General \> Appearance, then enable pseudo
-HiDPI mode.
