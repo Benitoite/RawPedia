@@ -69,7 +69,7 @@ Add the following line to /opt/local/etc/macports/variants.conf
 ```zsh
 +quartz -x11 -gnome +openmp
 ```
-### Installing dependencies
+##### Installing dependencies
 
 To install the dependencies, run from the terminal `sudo port install git cmake clang-11 libomp gtk3 gtkmm3 gtk-osx-application-gtk3 adwaita-icon-theme libsigcxx2 lcms2 libiptcdata fftw-3-single lensfun`
 
